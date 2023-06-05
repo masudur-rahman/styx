@@ -1,4 +1,4 @@
-package server
+package lib
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/masudur-rahman/database/pkg"
-	"github.com/masudur-rahman/database/sql/postgres/pb"
+	"github.com/masudur-rahman/database/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
 	_ "github.com/lib/pq"
 )
 
-func getPostgresConnection(connStr string) (*sql.Conn, error) {
+func GetPostgresConnection(connStr string) (*sql.Conn, error) {
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func handleSliceAny(v []any) string {
 	return value
 }
 
-func generateReadQuery(tableName string, filter map[string]interface{}) string {
+func GenerateReadQuery(tableName string, filter map[string]interface{}) string {
 	var conditions []string
 
 	for key, val := range filter {
@@ -143,7 +143,7 @@ func scanSingleRecord(rows *sql.Rows) (map[string]interface{}, error) {
 	return record, nil
 }
 
-func executeReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int64) ([]map[string]interface{}, error) {
+func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int64) ([]map[string]interface{}, error) {
 	log.Printf("Read Query: query=%v\n", query)
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
@@ -176,7 +176,7 @@ func executeReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int
 	return records, nil
 }
 
-func generateInsertQuery(tableName string, record map[string]interface{}) string {
+func GenerateInsertQuery(tableName string, record map[string]interface{}) string {
 	var cols []string
 	var values []string
 
@@ -198,14 +198,14 @@ func generateInsertQuery(tableName string, record map[string]interface{}) string
 	return query
 }
 
-func executeWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.Result, error) {
+func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.Result, error) {
 	log.Printf("Write Query: query=%v\n", query)
 	result, err := conn.ExecContext(ctx, query)
 
 	return result, err
 }
 
-func generateUpdateQuery(table string, id string, record map[string]interface{}) string {
+func GenerateUpdateQuery(table string, id string, record map[string]interface{}) string {
 	var setValues []string
 
 	for key, val := range record {
@@ -224,12 +224,12 @@ func generateUpdateQuery(table string, id string, record map[string]interface{})
 	return query
 }
 
-func generateDeleteQuery(table, id string) string {
+func GenerateDeleteQuery(table, id string) string {
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = '%s'", table, id)
 	return query
 }
 
-func mapToRecord(record map[string]interface{}) (*pb.RecordResponse, error) {
+func MapToRecord(record map[string]interface{}) (*pb.RecordResponse, error) {
 	pm, err := pkg.ToProtoAny(record)
 	if err != nil {
 		return nil, err
@@ -238,13 +238,13 @@ func mapToRecord(record map[string]interface{}) (*pb.RecordResponse, error) {
 	return &pb.RecordResponse{Record: pm}, nil
 }
 
-func mapsToRecords(records []map[string]interface{}) (*pb.RecordsResponse, error) {
+func MapsToRecords(records []map[string]interface{}) (*pb.RecordsResponse, error) {
 	rr := &pb.RecordsResponse{
 		Records: make([]*pb.RecordResponse, 0, len(records)),
 	}
 
 	for _, record := range records {
-		r, err := mapToRecord(record)
+		r, err := MapToRecord(record)
 		if err != nil {
 			return nil, err
 		}

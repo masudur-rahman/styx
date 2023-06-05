@@ -8,7 +8,8 @@ import (
 	"net"
 
 	"github.com/masudur-rahman/database/pkg"
-	"github.com/masudur-rahman/database/sql/postgres/pb"
+	"github.com/masudur-rahman/database/sql/postgres/lib"
+	"github.com/masudur-rahman/database/sql/postgres/pg-grpc/pb"
 
 	"google.golang.org/grpc"
 	health "google.golang.org/grpc/health/grpc_health_v1"
@@ -27,13 +28,13 @@ func (p *PostgresDB) GetById(ctx context.Context, params *pb.IdParams) (*pb.Reco
 	filter := map[string]interface{}{
 		"id": params.GetId(),
 	}
-	query := generateReadQuery(params.GetTable(), filter)
-	records, err := executeReadQuery(ctx, query, p.conn, 1)
+	query := lib.GenerateReadQuery(params.GetTable(), filter)
+	records, err := lib.ExecuteReadQuery(ctx, query, p.conn, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	return mapToRecord(records[0])
+	return lib.MapToRecord(records[0])
 }
 
 func (p *PostgresDB) Get(ctx context.Context, params *pb.FilterParams) (*pb.RecordResponse, error) {
@@ -42,25 +43,25 @@ func (p *PostgresDB) Get(ctx context.Context, params *pb.FilterParams) (*pb.Reco
 		return nil, err
 	}
 
-	query := generateReadQuery(params.GetTable(), filter)
-	records, err := executeReadQuery(ctx, query, p.conn, 1)
+	query := lib.GenerateReadQuery(params.GetTable(), filter)
+	records, err := lib.ExecuteReadQuery(ctx, query, p.conn, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	return mapToRecord(records[0])
+	return lib.MapToRecord(records[0])
 }
 
 func (p *PostgresDB) Find(ctx context.Context, params *pb.FilterParams) (*pb.RecordsResponse, error) {
 	filter, err := pkg.ProtoAnyToMap(params.GetFilter())
 
-	query := generateReadQuery(params.GetTable(), filter)
-	records, err := executeReadQuery(ctx, query, p.conn, -1)
+	query := lib.GenerateReadQuery(params.GetTable(), filter)
+	records, err := lib.ExecuteReadQuery(ctx, query, p.conn, -1)
 	if err != nil {
 		return nil, err
 	}
 
-	return mapsToRecords(records)
+	return lib.MapsToRecords(records)
 }
 
 func (p *PostgresDB) Create(ctx context.Context, params *pb.CreateParams) (*pb.RecordResponse, error) {
@@ -69,8 +70,8 @@ func (p *PostgresDB) Create(ctx context.Context, params *pb.CreateParams) (*pb.R
 		return nil, err
 	}
 
-	query := generateInsertQuery(params.GetTable(), record)
-	_, err = executeWriteQuery(ctx, query, p.conn)
+	query := lib.GenerateInsertQuery(params.GetTable(), record)
+	_, err = lib.ExecuteWriteQuery(ctx, query, p.conn)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +93,8 @@ func (p *PostgresDB) Update(ctx context.Context, params *pb.UpdateParams) (*pb.R
 		return nil, err
 	}
 
-	query := generateUpdateQuery(params.GetTable(), params.GetId(), record)
-	_, err = executeWriteQuery(ctx, query, p.conn)
+	query := lib.GenerateUpdateQuery(params.GetTable(), params.GetId(), record)
+	_, err = lib.ExecuteWriteQuery(ctx, query, p.conn)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +106,8 @@ func (p *PostgresDB) Update(ctx context.Context, params *pb.UpdateParams) (*pb.R
 }
 
 func (p *PostgresDB) Delete(ctx context.Context, params *pb.IdParams) (*pb.DeleteResponse, error) {
-	query := generateDeleteQuery(params.GetTable(), params.GetId())
-	_, err := executeWriteQuery(ctx, query, p.conn)
+	query := lib.GenerateDeleteQuery(params.GetTable(), params.GetId())
+	_, err := lib.ExecuteWriteQuery(ctx, query, p.conn)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func StartPostgresServer(connStr, host string, port int, tables ...interface{}) 
 	hs := NewHealthChecker()
 	health.RegisterHealthServer(server, hs)
 
-	pgConn, err := getPostgresConnection(connStr)
+	pgConn, err := lib.GetPostgresConnection(connStr)
 	if err != nil {
 		return err
 	}

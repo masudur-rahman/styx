@@ -1,4 +1,4 @@
-package server
+package lib
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ func Test_generateReadQuery(t *testing.T) {
 			"id":   "abcd",
 			"name": "masud",
 		}
-		query := generateReadQuery(tableName, params)
+		query := GenerateReadQuery(tableName, params)
 		assert.NotEmpty(t, query)
 	})
 }
