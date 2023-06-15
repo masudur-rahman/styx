@@ -3,6 +3,9 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"github.com/masudur-rahman/database/sql/postgres/lib"
+	"strings"
 
 	"github.com/masudur-rahman/database/dberr"
 	"github.com/masudur-rahman/database/pkg"
@@ -12,10 +15,14 @@ import (
 )
 
 type Postgres struct {
-	ctx   context.Context
-	table string
-	id    string
-	conn  *sql.Conn
+	ctx     context.Context
+	table   string
+	id      string
+	columns []string
+	allCols bool
+	where   string
+	args    []any
+	conn    *sql.Conn
 }
 
 func (pg Postgres) Table(name string) isql.Database {
@@ -23,16 +30,87 @@ func (pg Postgres) Table(name string) isql.Database {
 	return pg
 }
 
-func (pg Postgres) ID(id string) isql.Database {
+func (pg Postgres) ID(id any) isql.Database {
+	if pg.where != "" {
+		pg.where += " AND "
+	}
+
 	pg.id = id
 	return pg
 }
 
-func (pg Postgres) FindOne(document interface{}, filter ...interface{}) (bool, error) {
+func (pg Postgres) In(col string, values ...any) isql.Database {
+	if pg.where != "" {
+		pg.where += " AND "
+	}
+
+	pg.where += fmt.Sprintf("%s IN %s", col, lib.HandleSliceAny(values))
+	return pg
+}
+
+func (pg Postgres) Where(cond string, args ...any) isql.Database {
+	pg.where = pg.addWhereClause(cond)
+	pg.args = append(pg.args, args)
+	return pg
+}
+
+func (pg Postgres) addWhereClause(cond string) string {
+	if pg.where != "" {
+		pg.where += " AND "
+	}
+
+	pg.where += cond
+	return pg.where
+}
+
+func (pg Postgres) Columns(cols ...string) isql.Database {
+	pg.columns = cols
+	return pg
+}
+
+func (pg Postgres) AllCols() isql.Database {
+	pg.allCols = true
+	return pg
+}
+
+func (pg Postgres) generateReadQuery() string {
+	var cols string
+	if pg.allCols || len(pg.columns) == 0 {
+		cols = "*"
+	} else {
+		cols = strings.Join(pg.columns, ", ")
+	}
+
+	query := fmt.Sprintf("SELECT %s FROM \"%s\"", cols, pg.table)
+
+	if pg.where != "" {
+		query = fmt.Sprintf("%s WHERE %s", query, pg.where)
+	}
+
+	return query
+}
+
+func (pg Postgres) executeReadQuery(query string) string {
+	rows, err := pg.conn.QueryContext(pg.ctx, query, pg.args)
+	if err != nil {
+		return
+	}
+}
+
+func (pg Postgres) FindOne(document interface{}, filter ...any) (bool, error) {
+	pg.where = pg.addWhereClause(lib.GenerateWhereClauseFromID(pg.id))
+	if len(filter) > 0 {
+		pg.where = pg.addWhereClause(lib.GenerateWhereClauseFromFilter(filter[0]))
+	}
 	if err := dberr.CheckIdOrFilterNonEmpty(pg.id, filter); err != nil {
 		return false, err
 	}
+	if pg.where == "" {
+		return false, fmt.Errorf("no filter parameter passed")
+	}
 
+	query := pg.generateReadQuery()
+	lib.GenerateReadQuery()
 	collection, err := getDBCollection(pg.ctx, pg.db, pg.collectionName)
 	if err != nil {
 		return false, err

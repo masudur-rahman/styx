@@ -1,11 +1,18 @@
 package sql
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+)
 
 type Database interface {
 	Table(name string) Database
 
-	ID(id string) Database
+	ID(id any) Database
+	In(string, ...any) Database
+	Where(string, ...any) Database
+	Columns(...string) Database
+	AllCols() Database
 
 	FindOne(document interface{}, filter ...interface{}) (bool, error)
 	FindMany(documents interface{}, filter interface{}) error

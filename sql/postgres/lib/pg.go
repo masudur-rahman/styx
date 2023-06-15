@@ -58,7 +58,7 @@ func toColumnValue(key string, val interface{}) (string, string) {
 	case []string:
 		value = fmt.Sprintf("('%s')", strings.Join(v, "', '"))
 	case []any:
-		value = handleSliceAny(v)
+		value = HandleSliceAny(v)
 	default:
 		value = fmt.Sprintf("%v", v)
 	}
@@ -66,7 +66,7 @@ func toColumnValue(key string, val interface{}) (string, string) {
 	return key, value
 }
 
-func handleSliceAny(v []any) string {
+func HandleSliceAny(v []any) string {
 	var value string
 	var vals []string
 	typ := reflect.String.String()
@@ -85,6 +85,41 @@ func handleSliceAny(v []any) string {
 		value = fmt.Sprintf("(%s)", strings.Join(vals, ", "))
 	}
 	return value
+}
+
+func GenerateWhereClauseFromID(id any) string {
+	if id == "" {
+		return ""
+	}
+
+	col, value := toColumnValue("id", id)
+	return strings.Join([]string{col, value}, "=")
+}
+
+func GenerateWhereClauseFromFilter(filter any) string {
+	var conditions []string
+
+	val := reflect.ValueOf(filter)
+	for idx := 0; idx < val.NumField(); idx++ {
+		field := val.Type().Field(idx)
+		if val.Field(idx).IsZero() {
+			continue
+		}
+
+		fieldName := field.Tag.Get("json")
+		if fieldName == "" {
+			fieldName = field.Name
+		}
+
+		col, value := toColumnValue(fieldName, val.Field(idx).Interface())
+		condition := strings.Join([]string{col, value}, "=")
+		conditions = append(conditions, condition)
+	}
+	return strings.Join(conditions, " AND ")
+}
+
+func GenerateQuery(tableName, where string) {
+
 }
 
 func GenerateReadQuery(tableName string, filter map[string]interface{}) string {
@@ -118,6 +153,29 @@ func GenerateReadQuery(tableName string, filter map[string]interface{}) string {
 	query += conditionString
 
 	return query
+}
+
+func scanSingleRecordAny(rows *sql.Rows, doc any) error {
+	fields, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+	scans := make([]interface{}, len(fields))
+
+	for i := range scans {
+		scans[i] = &scans[i]
+	}
+	if err = rows.Scan(scans...); err != nil {
+		return err
+	}
+	elem := reflect.ValueOf().Elem()
+	elem.
+
+	record := make(map[string]interface{})
+	for i := range scans {
+		fieldName := fromDBFieldName(fields[i])
+		record[fieldName] = scans[i]
+	}
 }
 
 func scanSingleRecord(rows *sql.Rows) (map[string]interface{}, error) {
