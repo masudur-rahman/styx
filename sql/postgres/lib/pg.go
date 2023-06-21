@@ -16,8 +16,21 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func GetPostgresConnection(connStr string) (*sql.Conn, error) {
-	db, err := sql.Open("postgres", connStr)
+type PostgresConfig struct {
+	Name     string `json:"name" yaml:"name"`
+	Host     string `json:"host" yaml:"host"`
+	Port     string `json:"port" yaml:"port"`
+	User     string `json:"user" yaml:"user"`
+	Password string `json:"password" yaml:"password"`
+	SSLMode  string `json:"sslmode" yaml:"sslmode"`
+}
+
+func (cp PostgresConfig) String() string {
+	return fmt.Sprintf("user=%v password=%v dbname=%v host=%v port=%v sslmode=%v", cp.User, cp.Password, cp.Name, cp.Host, cp.Port, cp.SSLMode)
+}
+
+func GetPostgresConnection(cfg PostgresConfig) (*sql.Conn, error) {
+	db, err := sql.Open("postgres", cfg.String())
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +47,9 @@ func GetPostgresConnection(connStr string) (*sql.Conn, error) {
 }
 
 func isDefaultValue(value interface{}) bool {
+	if value == nil {
+		return true
+	}
 	typ := reflect.TypeOf(value)
 	zero := reflect.Zero(typ).Interface()
 	return reflect.DeepEqual(value, zero)
@@ -88,7 +104,7 @@ func HandleSliceAny(v []any) string {
 }
 
 func GenerateWhereClauseFromID(id any) string {
-	if id == "" {
+	if isDefaultValue(id) {
 		return ""
 	}
 
@@ -155,27 +171,63 @@ func GenerateReadQuery(tableName string, filter map[string]interface{}) string {
 	return query
 }
 
-func scanSingleRecordAny(rows *sql.Rows, doc any) error {
+func ScanSingleRow(rows *sql.Rows, fieldMap map[string]reflect.Value) error {
 	fields, err := rows.Columns()
 	if err != nil {
 		return err
 	}
-	scans := make([]interface{}, len(fields))
 
+	scans := make([]any, len(fields))
 	for i := range scans {
 		scans[i] = &scans[i]
 	}
 	if err = rows.Scan(scans...); err != nil {
 		return err
 	}
-	elem := reflect.ValueOf().Elem()
-	elem.
 
-	record := make(map[string]interface{})
-	for i := range scans {
-		fieldName := fromDBFieldName(fields[i])
-		record[fieldName] = scans[i]
+	for idx, col := range fields {
+		field, ok := fieldMap[col]
+		if ok && field.IsValid() && field.CanSet() {
+			field.Set(reflect.ValueOf(scans[idx]))
+		}
 	}
+	return nil
+}
+
+func generateDBFieldMapForStruct(doc any) map[string]reflect.Value {
+	elem := reflect.ValueOf(doc).Elem()
+	elemType := elem.Type()
+
+	fieldMap := make(map[string]reflect.Value)
+	for idx := 0; idx < elem.NumField(); idx++ {
+		f := elem.Field(idx)
+		ft := elemType.Field(idx)
+		dbTag := ft.Tag.Get("db")
+		if dbTag != "" {
+			fieldMap[dbTag] = f
+		} else {
+			fieldMap[toDBFieldName(ft.Name)] = f
+		}
+	}
+	return fieldMap
+}
+
+func GenerateDBFieldMap(doc any) map[string]reflect.Value {
+	elem := reflect.ValueOf(doc).Elem()
+	elemType := elem.Type()
+	var fieldMap map[string]reflect.Value
+	switch elemType.Kind() {
+	case reflect.Struct:
+		fieldMap = generateDBFieldMapForStruct(doc)
+	case reflect.Slice:
+		elemType = elemType.Elem()
+		if elemType.Kind() == reflect.Ptr {
+			elemType = elemType.Elem()
+		}
+		doc = reflect.New(elemType).Interface()
+		fieldMap = generateDBFieldMapForStruct(doc)
+	}
+	return fieldMap
 }
 
 func scanSingleRecord(rows *sql.Rows) (map[string]interface{}, error) {

@@ -1,7 +1,6 @@
 package sql
 
 import (
-	"context"
 	"database/sql"
 )
 
@@ -15,7 +14,7 @@ type Database interface {
 	AllCols() Database
 
 	FindOne(document interface{}, filter ...interface{}) (bool, error)
-	FindMany(documents interface{}, filter interface{}) error
+	FindMany(documents interface{}, filter ...interface{}) error
 
 	InsertOne(document interface{}) (id string, err error)
 	InsertMany(documents []interface{}) ([]string, error)
