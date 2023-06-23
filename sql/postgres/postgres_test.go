@@ -77,3 +77,49 @@ func TestPostgres_FindMany(t *testing.T) {
 		assert.Nil(t, err)
 	})
 }
+
+func TestPostgres_InsertOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	db = db.Table("user")
+	t.Run("insert data", func(t *testing.T) {
+		user := User{
+			Name:     "test",
+			FullName: "Test Name",
+			Email:    "test@test.test",
+		}
+		id, err := db.InsertOne(user)
+		assert.Nil(t, err)
+		assert.NotEqual(t, 0, id)
+	})
+}
+
+func TestPostgres_UpdateOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	db = db.Table("user")
+	t.Run("insert data", func(t *testing.T) {
+		user := User{
+			FullName: "Test Name 2",
+		}
+		err := db.Where("name='test'").UpdateOne(user)
+		assert.Nil(t, err)
+	})
+}
+
+func TestPostgres_DeleteOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	db = db.Table("user")
+	t.Run("delete data", func(t *testing.T) {
+		err := db.ID(8).DeleteOne()
+		assert.Nil(t, err)
+	})
+	t.Run("delete data from filter", func(t *testing.T) {
+		err := db.DeleteOne(User{ID: 7})
+		assert.Nil(t, err)
+	})
+}

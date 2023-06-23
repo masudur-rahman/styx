@@ -16,8 +16,8 @@ type Database interface {
 	FindOne(document interface{}, filter ...interface{}) (bool, error)
 	FindMany(documents interface{}, filter ...interface{}) error
 
-	InsertOne(document interface{}) (id string, err error)
-	InsertMany(documents []interface{}) ([]string, error)
+	InsertOne(document interface{}) (id int64, err error)
+	InsertMany(documents []interface{}) ([]int64, error)
 
 	UpdateOne(document interface{}) error
 

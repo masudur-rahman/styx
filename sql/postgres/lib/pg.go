@@ -46,7 +46,7 @@ func GetPostgresConnection(cfg PostgresConfig) (*sql.Conn, error) {
 	return conn, nil
 }
 
-func isDefaultValue(value interface{}) bool {
+func isZeroValue(value any) bool {
 	if value == nil {
 		return true
 	}
@@ -63,8 +63,14 @@ func fromDBFieldName(fieldName string) string {
 	return strcase.ToLowerCamel(fieldName)
 }
 
-func toColumnValue(key string, val interface{}) (string, string) {
+func toColumnValue(key string, val any) (string, string) {
 	key = toDBFieldName(key)
+	value := formatValues(val)
+
+	return key, value
+}
+
+func formatValues(val any) string {
 	var value string
 	switch v := val.(type) {
 	case string:
@@ -78,8 +84,7 @@ func toColumnValue(key string, val interface{}) (string, string) {
 	default:
 		value = fmt.Sprintf("%v", v)
 	}
-
-	return key, value
+	return value
 }
 
 func HandleSliceAny(v []any) string {
@@ -104,7 +109,7 @@ func HandleSliceAny(v []any) string {
 }
 
 func GenerateWhereClauseFromID(id any) string {
-	if isDefaultValue(id) {
+	if isZeroValue(id) {
 		return ""
 	}
 
@@ -122,9 +127,9 @@ func GenerateWhereClauseFromFilter(filter any) string {
 			continue
 		}
 
-		fieldName := field.Tag.Get("json")
+		fieldName := field.Tag.Get("db")
 		if fieldName == "" {
-			fieldName = field.Name
+			fieldName = toDBFieldName(field.Name)
 		}
 
 		col, value := toColumnValue(fieldName, val.Field(idx).Interface())
@@ -134,16 +139,12 @@ func GenerateWhereClauseFromFilter(filter any) string {
 	return strings.Join(conditions, " AND ")
 }
 
-func GenerateQuery(tableName, where string) {
-
-}
-
-func GenerateReadQuery(tableName string, filter map[string]interface{}) string {
+func GenerateReadQuery(tableName string, filter map[string]any) string {
 	var conditions []string
 
 	for key, val := range filter {
 		// TODO: Add support for passing field_names to be included in query
-		if isDefaultValue(val) {
+		if isZeroValue(val) {
 			// don't insert the default value checks into the condition array
 			continue
 		}
@@ -230,12 +231,12 @@ func GenerateDBFieldMap(doc any) map[string]reflect.Value {
 	return fieldMap
 }
 
-func scanSingleRecord(rows *sql.Rows) (map[string]interface{}, error) {
+func scanSingleRecord(rows *sql.Rows) (map[string]any, error) {
 	fields, err := rows.Columns()
 	if err != nil {
 		return nil, err
 	}
-	scans := make([]interface{}, len(fields))
+	scans := make([]any, len(fields))
 
 	for i := range scans {
 		scans[i] = &scans[i]
@@ -244,7 +245,7 @@ func scanSingleRecord(rows *sql.Rows) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	record := make(map[string]interface{})
+	record := make(map[string]any)
 	for i := range scans {
 		fieldName := fromDBFieldName(fields[i])
 		record[fieldName] = scans[i]
@@ -253,7 +254,7 @@ func scanSingleRecord(rows *sql.Rows) (map[string]interface{}, error) {
 	return record, nil
 }
 
-func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int64) ([]map[string]interface{}, error) {
+func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int64) ([]map[string]any, error) {
 	log.Printf("Read Query: query=%v\n", query)
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
@@ -261,7 +262,7 @@ func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int
 	}
 	defer rows.Close()
 
-	records := make([]map[string]interface{}, 0)
+	records := make([]map[string]any, 0)
 
 	for rows.Next() {
 		record, err := scanSingleRecord(rows)
@@ -286,12 +287,38 @@ func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int
 	return records, nil
 }
 
-func GenerateInsertQuery(tableName string, record map[string]interface{}) string {
+func GenerateInsertQueries(tableName string, doc any) string {
+	var cols, values []string
+	rvalue := reflect.ValueOf(doc)
+	for idx := 0; idx < rvalue.NumField(); idx++ {
+		field := rvalue.Type().Field(idx)
+		if rvalue.Field(idx).IsZero() {
+			continue
+		}
+
+		col := field.Tag.Get("db")
+		if col == "" {
+			col = toDBFieldName(field.Name)
+		}
+
+		value := formatValues(rvalue.Field(idx).Interface())
+		cols = append(cols, col)
+		values = append(values, value)
+	}
+
+	colClause := strings.Join(cols, ", ")
+	valClause := strings.Join(values, ", ")
+	query := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", tableName, colClause, valClause)
+
+	return query
+}
+
+func GenerateInsertQuery(tableName string, record map[string]any) string {
 	var cols []string
 	var values []string
 
 	for key, val := range record {
-		//if isDefaultValue(val) {
+		//if isZeroValue(val) {
 		//	// don't need to insert the default values into the table
 		//	continue
 		//}
@@ -315,11 +342,35 @@ func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.R
 	return result, err
 }
 
-func GenerateUpdateQuery(table string, id string, record map[string]interface{}) string {
+func GenerateUpdateQueries(tableName, where string, doc any) string {
+	var setValues []string
+	rvalue := reflect.ValueOf(doc)
+	for idx := 0; idx < rvalue.NumField(); idx++ {
+		field := rvalue.Type().Field(idx)
+		if rvalue.Field(idx).IsZero() {
+			continue
+		}
+
+		col := field.Tag.Get("db")
+		if col == "" {
+			col = toDBFieldName(field.Name)
+		}
+
+		value := formatValues(rvalue.Field(idx).Interface())
+		setValue := fmt.Sprintf("%s = %s", col, value)
+		setValues = append(setValues, setValue)
+	}
+
+	setClause := strings.Join(setValues, ", ")
+	query := fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s", tableName, setClause, where)
+	return query
+}
+
+func GenerateUpdateQuery(table string, id string, record map[string]any) string {
 	var setValues []string
 
 	for key, val := range record {
-		if isDefaultValue(val) {
+		if isZeroValue(val) {
 			// don't add the default values into the set query
 			continue
 		}
@@ -334,12 +385,17 @@ func GenerateUpdateQuery(table string, id string, record map[string]interface{})
 	return query
 }
 
+func GenerateDeleteQueries(table, where string) string {
+	query := fmt.Sprintf("DELETE FROM \"%s\" WHERE %s", table, where)
+	return query
+}
+
 func GenerateDeleteQuery(table, id string) string {
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = '%s'", table, id)
 	return query
 }
 
-func MapToRecord(record map[string]interface{}) (*pb.RecordResponse, error) {
+func MapToRecord(record map[string]any) (*pb.RecordResponse, error) {
 	pm, err := pkg.ToProtoAny(record)
 	if err != nil {
 		return nil, err
@@ -348,7 +404,7 @@ func MapToRecord(record map[string]interface{}) (*pb.RecordResponse, error) {
 	return &pb.RecordResponse{Record: pm}, nil
 }
 
-func MapsToRecords(records []map[string]interface{}) (*pb.RecordsResponse, error) {
+func MapsToRecords(records []map[string]any) (*pb.RecordsResponse, error) {
 	rr := &pb.RecordsResponse{
 		Records: make([]*pb.RecordResponse, 0, len(records)),
 	}
