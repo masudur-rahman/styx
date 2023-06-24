@@ -13,16 +13,18 @@ type Database interface {
 	Columns(...string) Database
 	AllCols() Database
 
-	FindOne(document interface{}, filter ...interface{}) (bool, error)
-	FindMany(documents interface{}, filter ...interface{}) error
+	FindOne(document any, filter ...any) (bool, error)
+	FindMany(documents any, filter ...any) error
 
-	InsertOne(document interface{}) (id int64, err error)
-	InsertMany(documents []interface{}) ([]int64, error)
+	InsertOne(document any) (id int64, err error)
+	InsertMany(documents []any) ([]int64, error)
 
-	UpdateOne(document interface{}) error
+	UpdateOne(document any) error
 
-	DeleteOne(filter ...interface{}) error
+	DeleteOne(filter ...any) error
 
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	Exec(query string, args ...any) (sql.Result, error)
+
+	Sync(...any) error
 }

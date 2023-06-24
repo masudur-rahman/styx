@@ -46,7 +46,7 @@ func GetPostgresConnection(cfg PostgresConfig) (*sql.Conn, error) {
 	return conn, nil
 }
 
-func isZeroValue(value any) bool {
+func IsZeroValue(value any) bool {
 	if value == nil {
 		return true
 	}
@@ -109,7 +109,7 @@ func HandleSliceAny(v []any) string {
 }
 
 func GenerateWhereClauseFromID(id any) string {
-	if isZeroValue(id) {
+	if IsZeroValue(id) {
 		return ""
 	}
 
@@ -144,7 +144,7 @@ func GenerateReadQuery(tableName string, filter map[string]any) string {
 
 	for key, val := range filter {
 		// TODO: Add support for passing field_names to be included in query
-		if isZeroValue(val) {
+		if IsZeroValue(val) {
 			// don't insert the default value checks into the condition array
 			continue
 		}
@@ -318,7 +318,7 @@ func GenerateInsertQuery(tableName string, record map[string]any) string {
 	var values []string
 
 	for key, val := range record {
-		//if isZeroValue(val) {
+		//if IsZeroValue(val) {
 		//	// don't need to insert the default values into the table
 		//	continue
 		//}
@@ -370,7 +370,7 @@ func GenerateUpdateQuery(table string, id string, record map[string]any) string 
 	var setValues []string
 
 	for key, val := range record {
-		if isZeroValue(val) {
+		if IsZeroValue(val) {
 			// don't add the default values into the set query
 			continue
 		}

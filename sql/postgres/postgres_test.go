@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/masudur-rahman/database/sql"
 	"github.com/masudur-rahman/database/sql/postgres"
@@ -33,6 +34,28 @@ func initializeDB(t *testing.T) (sql.Database, func() error) {
 	require.Nil(t, err)
 
 	return postgres.NewPostgres(context.Background(), conn), conn.Close
+}
+
+func TestPostgres_Sync(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	type Test struct {
+		ID        int       `db:"id,pk autoincr"`
+		Name      string    `db:"name"`
+		CreatedAt time.Time `db:"created_at"`
+	}
+
+	type Test2 struct {
+		ID        int       `db:"id,pk autoincr"`
+		Username  string    `db:"username,uq"`
+		Name      string    `db:"name,uqs"`
+		Email     string    `db:",uqs"`
+		CreatedAt time.Time `db:"created_at"`
+	}
+
+	err := db.Sync(Test{}, Test2{})
+	assert.Nil(t, err)
 }
 
 func TestPostgres_FindOne(t *testing.T) {

@@ -16,7 +16,7 @@ import (
 type Database struct {
 	ctx    context.Context
 	table  string
-	id     string
+	id     any
 	client pb.PostgresClient
 }
 
@@ -32,9 +32,29 @@ func (d Database) Table(name string) isql.Database {
 	return d
 }
 
-func (d Database) ID(id string) isql.Database {
+func (d Database) ID(id any) isql.Database {
 	d.id = id
 	return d
+}
+
+func (d Database) In(s string, a ...any) isql.Database {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (d Database) Where(s string, a ...any) isql.Database {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (d Database) Columns(s ...string) isql.Database {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (d Database) AllCols() isql.Database {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (d Database) FindOne(document interface{}, filter ...interface{}) (bool, error) {
@@ -76,7 +96,7 @@ func (d Database) FindOne(document interface{}, filter ...interface{}) (bool, er
 	return true, nil
 }
 
-func (d Database) FindMany(documents interface{}, filter interface{}) error {
+func (d Database) FindMany(documents interface{}, filter ...interface{}) error {
 	af, err := pkg.ToProtoAny(filter)
 	if err != nil {
 		return err
@@ -102,10 +122,10 @@ func (d Database) FindMany(documents interface{}, filter interface{}) error {
 	return pkg.ParseInto(rmaps, documents)
 }
 
-func (d Database) InsertOne(document interface{}) (id string, err error) {
+func (d Database) InsertOne(document interface{}) (id int64, err error) {
 	df, err := pkg.ToProtoAny(document)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
 	record, err := d.client.Create(d.ctx, &pb.CreateParams{
@@ -113,24 +133,24 @@ func (d Database) InsertOne(document interface{}) (id string, err error) {
 		Record: df,
 	})
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
 	rmap, err := pkg.ProtoAnyToMap(record.Record)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
 	if err = pkg.ParseInto(rmap, document); err != nil {
-		return "", err
+		return 0, err
 	}
 
-	return rmap["id"].(string), nil
+	return rmap["id"].(int64), nil
 }
 
 // TODO: Implement in a more efficient way
-func (d Database) InsertMany(documents []interface{}) ([]string, error) {
-	var ids []string
+func (d Database) InsertMany(documents []interface{}) ([]int64, error) {
+	var ids []int64
 
 	for idx := range documents {
 		id, err := d.InsertOne(documents[idx])
@@ -196,6 +216,11 @@ func (d Database) Query(query string, args ...interface{}) (*sql.Rows, error) {
 }
 
 func (d Database) Exec(query string, args ...interface{}) (sql.Result, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (d Database) Sync(...any) error {
 	//TODO implement me
 	panic("implement me")
 }

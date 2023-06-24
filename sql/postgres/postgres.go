@@ -229,6 +229,17 @@ func (pg Postgres) Exec(query string, args ...any) (sql.Result, error) {
 	return pg.conn.ExecContext(pg.ctx, query, args...)
 }
 
+func (p Postgres) Sync(tables ...any) error {
+	ctx := context.Background()
+	for _, table := range tables {
+		if err := lib.SyncTable(ctx, p.conn, table); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (pg Postgres) cleanup() {
 	fmt.Println(pg.table, pg.id, pg.columns, pg.allCols, pg.where, pg.args)
 	pg.id = nil
