@@ -13,7 +13,7 @@ import (
 )
 
 type Doc struct {
-	ID string
+	ID any
 }
 
 type keyValue struct {
