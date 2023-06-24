@@ -162,10 +162,10 @@ func (pg Postgres) FindMany(documents any, filter ...any) error {
 	return pg.executeReadQuery(query, documents)
 }
 
-func (pg Postgres) executeInsertQuery(query string) (int64, error) {
+func (pg Postgres) executeInsertQuery(query string) (any, error) {
 	query += " RETURNING id;"
 	log.Printf("Insert Query: query: %v, args: %v\n", query, pg.args)
-	var id int64
+	var id any
 	err := pg.conn.QueryRowContext(pg.ctx, query, pg.args...).Scan(&id)
 	return id, err
 }
@@ -177,13 +177,13 @@ func (pg Postgres) executeWriteQuery(query string) (sql.Result, error) {
 	return result, err
 }
 
-func (pg Postgres) InsertOne(document any) (id int64, err error) {
+func (pg Postgres) InsertOne(document any) (id any, err error) {
 	query := lib.GenerateInsertQueries(pg.table, document)
 	return pg.executeInsertQuery(query)
 }
 
-func (pg Postgres) InsertMany(documents []any) ([]int64, error) {
-	var ids []int64
+func (pg Postgres) InsertMany(documents []any) ([]any, error) {
+	var ids []any
 	for _, doc := range documents {
 		query := lib.GenerateInsertQueries(pg.table, doc)
 		id, err := pg.executeInsertQuery(query)
