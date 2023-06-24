@@ -1,5 +1,7 @@
 package dberr
 
+import "github.com/masudur-rahman/database/sql/postgres/lib"
+
 func CheckEntityNameNonEmpty(entity string) error {
 	if entity == "" {
 		return NewRequirementMissing("entity name must be set")
@@ -7,15 +9,15 @@ func CheckEntityNameNonEmpty(entity string) error {
 	return nil
 }
 
-func CheckIDNonEmpty(id string) error {
-	if id == "" {
+func CheckIDNonEmpty(id any) error {
+	if lib.IsZeroValue(id) {
 		return NewRequirementMissing("must provide document id")
 	}
 	return nil
 }
 
-func CheckIdOrFilterNonEmpty(id string, filter interface{}) error {
-	if id == "" && filter == nil {
+func CheckIdOrFilterNonEmpty(id any, filter interface{}) error {
+	if lib.IsZeroValue(id) && filter == nil {
 		return NewRequirementMissing("must provide id and/or filter")
 	}
 	return nil

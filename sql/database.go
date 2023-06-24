@@ -1,22 +1,30 @@
 package sql
 
-import "database/sql"
+import (
+	"database/sql"
+)
 
 type Database interface {
 	Table(name string) Database
 
-	ID(id string) Database
+	ID(id any) Database
+	In(string, ...any) Database
+	Where(string, ...any) Database
+	Columns(...string) Database
+	AllCols() Database
 
-	FindOne(document interface{}, filter ...interface{}) (bool, error)
-	FindMany(documents interface{}, filter interface{}) error
+	FindOne(document any, filter ...any) (bool, error)
+	FindMany(documents any, filter ...any) error
 
-	InsertOne(document interface{}) (id string, err error)
-	InsertMany(documents []interface{}) ([]string, error)
+	InsertOne(document any) (id int64, err error)
+	InsertMany(documents []any) ([]int64, error)
 
-	UpdateOne(document interface{}) error
+	UpdateOne(document any) error
 
-	DeleteOne(filter ...interface{}) error
+	DeleteOne(filter ...any) error
 
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	Exec(query string, args ...any) (sql.Result, error)
+
+	Sync(...any) error
 }
