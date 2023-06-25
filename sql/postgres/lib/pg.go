@@ -82,7 +82,11 @@ func formatValues(val any) string {
 	case []any:
 		value = HandleSliceAny(v)
 	default:
-		value = fmt.Sprintf("%v", v)
+		if reflect.TypeOf(v).Kind() == reflect.String {
+			value = fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprint(v), "'", "''"))
+		} else {
+			value = fmt.Sprintf("%v", v)
+		}
 	}
 	return value
 }
