@@ -193,7 +193,11 @@ func ScanSingleRow(rows *sql.Rows, fieldMap map[string]reflect.Value) error {
 
 		field, ok := fieldMap[col]
 		if ok && field.IsValid() && field.CanSet() {
-			field.Set(reflect.ValueOf(scans[idx]))
+			if field.Kind() == reflect.String {
+				field.SetString(reflect.ValueOf(scans[idx]).String())
+			} else {
+				field.Set(reflect.ValueOf(scans[idx]))
+			}
 		}
 	}
 	return nil
