@@ -112,7 +112,7 @@ func TestPostgres_InsertOne(t *testing.T) {
 			FullName: "Test Name",
 			Email:    "test@test.test",
 		}
-		id, err := db.InsertOne(user)
+		id, err := db.InsertOne(&user)
 		assert.Nil(t, err)
 		assert.NotEqual(t, 0, id)
 	})

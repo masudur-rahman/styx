@@ -288,8 +288,11 @@ func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int
 }
 
 func GenerateInsertQueries(tableName string, doc any) string {
-	var cols, values []string
 	rvalue := reflect.ValueOf(doc)
+	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
+		rvalue = rvalue.Elem()
+	}
+	var cols, values []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
 		if rvalue.Field(idx).IsZero() {
@@ -345,6 +348,9 @@ func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.R
 func GenerateUpdateQueries(tableName, where string, doc any) string {
 	var setValues []string
 	rvalue := reflect.ValueOf(doc)
+	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
+		rvalue = rvalue.Elem()
+	}
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
 		if rvalue.Field(idx).IsZero() {
