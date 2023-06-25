@@ -127,12 +127,8 @@ func GenerateWhereClauseFromFilter(filter any) string {
 			continue
 		}
 
-		fieldName := field.Tag.Get("db")
-		if fieldName == "" {
-			fieldName = toDBFieldName(field.Name)
-		}
-
-		col, value := toColumnValue(fieldName, val.Field(idx).Interface())
+		col := getFieldName(field)
+		value := formatValues(val.Field(idx).Interface())
 		condition := strings.Join([]string{col, value}, "=")
 		conditions = append(conditions, condition)
 	}
@@ -187,6 +183,10 @@ func ScanSingleRow(rows *sql.Rows, fieldMap map[string]reflect.Value) error {
 	}
 
 	for idx, col := range fields {
+		if IsZeroValue(scans[idx]) {
+			continue
+		}
+
 		field, ok := fieldMap[col]
 		if ok && field.IsValid() && field.CanSet() {
 			field.Set(reflect.ValueOf(scans[idx]))
@@ -203,12 +203,7 @@ func generateDBFieldMapForStruct(doc any) map[string]reflect.Value {
 	for idx := 0; idx < elem.NumField(); idx++ {
 		f := elem.Field(idx)
 		ft := elemType.Field(idx)
-		dbTag := ft.Tag.Get("db")
-		if dbTag != "" {
-			fieldMap[dbTag] = f
-		} else {
-			fieldMap[toDBFieldName(ft.Name)] = f
-		}
+		fieldMap[getFieldName(ft)] = f
 	}
 	return fieldMap
 }
@@ -299,11 +294,7 @@ func GenerateInsertQueries(tableName string, doc any) string {
 			continue
 		}
 
-		col := field.Tag.Get("db")
-		if col == "" {
-			col = toDBFieldName(field.Name)
-		}
-
+		col := getFieldName(field)
 		value := formatValues(rvalue.Field(idx).Interface())
 		cols = append(cols, col)
 		values = append(values, value)
@@ -357,11 +348,7 @@ func GenerateUpdateQueries(tableName, where string, doc any) string {
 			continue
 		}
 
-		col := field.Tag.Get("db")
-		if col == "" {
-			col = toDBFieldName(field.Name)
-		}
-
+		col := getFieldName(field)
 		value := formatValues(rvalue.Field(idx).Interface())
 		setValue := fmt.Sprintf("%s = %s", col, value)
 		setValues = append(setValues, setValue)
