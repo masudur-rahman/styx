@@ -20,6 +20,7 @@ type Postgres struct {
 	allCols bool
 	where   string
 	args    []any
+	showSQL bool
 	conn    *sql.Conn
 }
 
@@ -97,7 +98,10 @@ func (pg Postgres) generateReadQuery() string {
 func (pg Postgres) executeReadQuery(query string, doc any) error {
 	//defer pg.cleanup()
 
-	log.Printf("Read Query: query: %v, args: %v\n", query, pg.args)
+	if pg.showSQL {
+		log.Printf("Read Query: query: %v, args: %v\n", query, pg.args)
+	}
+
 	rows, err := pg.conn.QueryContext(pg.ctx, query, pg.args...)
 	if err != nil {
 		return err
@@ -164,14 +168,20 @@ func (pg Postgres) FindMany(documents any, filter ...any) error {
 
 func (pg Postgres) executeInsertQuery(query string) (any, error) {
 	query += " RETURNING id;"
-	log.Printf("Insert Query: query: %v, args: %v\n", query, pg.args)
+	if pg.showSQL {
+		log.Printf("Insert Query: query: %v, args: %v\n", query, pg.args)
+	}
+
 	var id any
 	err := pg.conn.QueryRowContext(pg.ctx, query, pg.args...).Scan(&id)
 	return id, err
 }
 
 func (pg Postgres) executeWriteQuery(query string) (sql.Result, error) {
-	log.Printf("Write Query: query: %v, args: %v\n", query, pg.args)
+	if pg.showSQL {
+		log.Printf("Write Query: query: %v, args: %v\n", query, pg.args)
+	}
+
 	result, err := pg.conn.ExecContext(pg.ctx, query, pg.args...)
 
 	return result, err
