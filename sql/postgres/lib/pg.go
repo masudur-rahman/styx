@@ -290,31 +290,6 @@ func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int
 	return records, nil
 }
 
-func GenerateInsertQueries(tableName string, doc any) string {
-	rvalue := reflect.ValueOf(doc)
-	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
-		rvalue = rvalue.Elem()
-	}
-	var cols, values []string
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if rvalue.Field(idx).IsZero() {
-			continue
-		}
-
-		col := getFieldName(field)
-		value := formatValues(rvalue.Field(idx).Interface())
-		cols = append(cols, col)
-		values = append(values, value)
-	}
-
-	colClause := strings.Join(cols, ", ")
-	valClause := strings.Join(values, ", ")
-	query := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", tableName, colClause, valClause)
-
-	return query
-}
-
 func GenerateInsertQuery(tableName string, record map[string]any) string {
 	var cols []string
 	var values []string
@@ -344,29 +319,6 @@ func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.R
 	return result, err
 }
 
-func GenerateUpdateQueries(tableName, where string, doc any) string {
-	var setValues []string
-	rvalue := reflect.ValueOf(doc)
-	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
-		rvalue = rvalue.Elem()
-	}
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if rvalue.Field(idx).IsZero() {
-			continue
-		}
-
-		col := getFieldName(field)
-		value := formatValues(rvalue.Field(idx).Interface())
-		setValue := fmt.Sprintf("%s = %s", col, value)
-		setValues = append(setValues, setValue)
-	}
-
-	setClause := strings.Join(setValues, ", ")
-	query := fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s", tableName, setClause, where)
-	return query
-}
-
 func GenerateUpdateQuery(table string, id string, record map[string]any) string {
 	var setValues []string
 
@@ -383,11 +335,6 @@ func GenerateUpdateQuery(table string, id string, record map[string]any) string 
 	setClause := strings.Join(setValues, ", ")
 
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = '%s'", table, setClause, id)
-	return query
-}
-
-func GenerateDeleteQueries(table, where string) string {
-	query := fmt.Sprintf("DELETE FROM \"%s\" WHERE %s", table, where)
 	return query
 }
 

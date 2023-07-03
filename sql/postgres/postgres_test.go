@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/masudur-rahman/database/sql/postgres"
 	"github.com/masudur-rahman/database/sql/postgres/lib"
 
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -94,10 +96,11 @@ func TestPostgres_InsertOne(t *testing.T) {
 
 	db = db.Table("test_user")
 	t.Run("insert data", func(t *testing.T) {
+		suffix := xid.New().String()
 		user := TestUser{
-			Name:     "test1",
+			Name:     "test-" + suffix,
 			FullName: "Test Name",
-			Email:    "test@test.test",
+			Email:    fmt.Sprintf("test%v@test.test", suffix),
 		}
 		id, err := db.InsertOne(&user)
 		assert.Nil(t, err)
