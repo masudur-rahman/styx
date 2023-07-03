@@ -16,8 +16,8 @@ type Database interface {
 	FindOne(document any, filter ...any) (bool, error)
 	FindMany(documents any, filter ...any) error
 
-	InsertOne(document any) (id int64, err error)
-	InsertMany(documents []any) ([]int64, error)
+	InsertOne(document any) (id any, err error)
+	InsertMany(documents []any) ([]any, error)
 
 	UpdateOne(document any) error
 

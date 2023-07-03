@@ -82,7 +82,11 @@ func formatValues(val any) string {
 	case []any:
 		value = HandleSliceAny(v)
 	default:
-		value = fmt.Sprintf("%v", v)
+		if reflect.TypeOf(v).Kind() == reflect.String {
+			value = fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprint(v), "'", "''"))
+		} else {
+			value = fmt.Sprintf("%v", v)
+		}
 	}
 	return value
 }
@@ -127,12 +131,8 @@ func GenerateWhereClauseFromFilter(filter any) string {
 			continue
 		}
 
-		fieldName := field.Tag.Get("db")
-		if fieldName == "" {
-			fieldName = toDBFieldName(field.Name)
-		}
-
-		col, value := toColumnValue(fieldName, val.Field(idx).Interface())
+		col := getFieldName(field)
+		value := formatValues(val.Field(idx).Interface())
 		condition := strings.Join([]string{col, value}, "=")
 		conditions = append(conditions, condition)
 	}
@@ -187,9 +187,17 @@ func ScanSingleRow(rows *sql.Rows, fieldMap map[string]reflect.Value) error {
 	}
 
 	for idx, col := range fields {
+		if IsZeroValue(scans[idx]) {
+			continue
+		}
+
 		field, ok := fieldMap[col]
 		if ok && field.IsValid() && field.CanSet() {
-			field.Set(reflect.ValueOf(scans[idx]))
+			if field.Kind() == reflect.String {
+				field.SetString(reflect.ValueOf(scans[idx]).String())
+			} else {
+				field.Set(reflect.ValueOf(scans[idx]))
+			}
 		}
 	}
 	return nil
@@ -203,12 +211,7 @@ func generateDBFieldMapForStruct(doc any) map[string]reflect.Value {
 	for idx := 0; idx < elem.NumField(); idx++ {
 		f := elem.Field(idx)
 		ft := elemType.Field(idx)
-		dbTag := ft.Tag.Get("db")
-		if dbTag != "" {
-			fieldMap[dbTag] = f
-		} else {
-			fieldMap[toDBFieldName(ft.Name)] = f
-		}
+		fieldMap[getFieldName(ft)] = f
 	}
 	return fieldMap
 }
@@ -287,32 +290,6 @@ func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int
 	return records, nil
 }
 
-func GenerateInsertQueries(tableName string, doc any) string {
-	var cols, values []string
-	rvalue := reflect.ValueOf(doc)
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if rvalue.Field(idx).IsZero() {
-			continue
-		}
-
-		col := field.Tag.Get("db")
-		if col == "" {
-			col = toDBFieldName(field.Name)
-		}
-
-		value := formatValues(rvalue.Field(idx).Interface())
-		cols = append(cols, col)
-		values = append(values, value)
-	}
-
-	colClause := strings.Join(cols, ", ")
-	valClause := strings.Join(values, ", ")
-	query := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", tableName, colClause, valClause)
-
-	return query
-}
-
 func GenerateInsertQuery(tableName string, record map[string]any) string {
 	var cols []string
 	var values []string
@@ -342,30 +319,6 @@ func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.R
 	return result, err
 }
 
-func GenerateUpdateQueries(tableName, where string, doc any) string {
-	var setValues []string
-	rvalue := reflect.ValueOf(doc)
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if rvalue.Field(idx).IsZero() {
-			continue
-		}
-
-		col := field.Tag.Get("db")
-		if col == "" {
-			col = toDBFieldName(field.Name)
-		}
-
-		value := formatValues(rvalue.Field(idx).Interface())
-		setValue := fmt.Sprintf("%s = %s", col, value)
-		setValues = append(setValues, setValue)
-	}
-
-	setClause := strings.Join(setValues, ", ")
-	query := fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s", tableName, setClause, where)
-	return query
-}
-
 func GenerateUpdateQuery(table string, id string, record map[string]any) string {
 	var setValues []string
 
@@ -382,11 +335,6 @@ func GenerateUpdateQuery(table string, id string, record map[string]any) string 
 	setClause := strings.Join(setValues, ", ")
 
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = '%s'", table, setClause, id)
-	return query
-}
-
-func GenerateDeleteQueries(table, where string) string {
-	query := fmt.Sprintf("DELETE FROM \"%s\" WHERE %s", table, where)
 	return query
 }
 
