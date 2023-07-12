@@ -36,7 +36,7 @@ func initializeDB(t *testing.T) (sql.Database, func() error) {
 	conn, err := lib.GetPostgresConnection(cfg)
 	require.Nil(t, err)
 
-	return postgres.NewPostgres(context.Background(), conn), conn.Close
+	return postgres.NewPostgres(context.Background(), conn).ShowSQL(true), conn.Close
 }
 
 func TestPostgres_Sync(t *testing.T) {
@@ -61,7 +61,7 @@ func TestPostgres_FindOne(t *testing.T) {
 	})
 
 	t.Run("find user by filter", func(t *testing.T) {
-		has, err := db.Where("email='test@test.test'").FindOne(&user, TestUser{Name: "test"})
+		has, err := db.Where("email=?", "test@test.test").FindOne(&user, TestUser{Name: "test"})
 		assert.Nil(t, err)
 		assert.True(t, has)
 	})
