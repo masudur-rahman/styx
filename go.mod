@@ -7,6 +7,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/iancoleman/strcase v0.2.0
 	github.com/lib/pq v1.10.9
+	github.com/mattn/go-sqlite3 v1.14.19
 	github.com/nedpals/supabase-go v0.3.0
 	github.com/rs/xid v1.5.0
 	github.com/stretchr/testify v1.8.4
