@@ -28,7 +28,7 @@ VERSION ?= $(shell git describe --tags --always --dirty)
 ### These variables should not need tweaking.
 ###
 
-SRC_DIRS := api cmd infra models pkg repos services # directories which hold app source (not vendored)
+SRC_DIRS := dberr mock nosql sql pkg # directories which hold app source (not vendored)
 
 #ALL_PLATFORMS := darwin/arm64 linux/amd64 linux/arm linux/arm64 linux/ppc64le linux/s390x windows/amd64
 ALL_PLATFORMS := linux/arm64 linux/amd64
@@ -43,7 +43,7 @@ TAG := $(VERSION)_$(OS)_$(ARCH)
 
 DOCKER_IMAGE := $(REGISTRY)/$(BIN)
 
-GO_VERSION       ?= 1.20
+GO_VERSION       ?= 1.21
 BUILD_IMAGE      ?= ghcr.io/masudur-rahman/golang:$(GO_VERSION)
 
 BIN_EXTENSION :=
