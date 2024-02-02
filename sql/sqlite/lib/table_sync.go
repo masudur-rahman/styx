@@ -96,9 +96,19 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 	sqlType := getSQLType(fieldValue.Type(), autoincr)
 	return fieldInfo{
 		Name:        fieldName,
-		Type:        sqlType + columnConstraint,
+		Type:        removeDuplicateKeyword(sqlType + columnConstraint),
 		IsComposite: isComposite,
 	}
+}
+
+func removeDuplicateKeyword(keyword string) string {
+	pk := "PRIMARY KEY"
+	count := strings.Count(keyword, pk)
+	if count > 1 {
+		idx := strings.Index(keyword, pk)
+		keyword = keyword[:idx+1] + strings.ReplaceAll(keyword[idx+1:], pk, "")
+	}
+	return keyword
 }
 
 func getFieldName(fieldType reflect.StructField) string {
