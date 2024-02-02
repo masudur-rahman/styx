@@ -2,85 +2,126 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
-	"github.com/golang/mock/gomock"
-	"github.com/masudur-rahman/database/sql/sqlite/lib"
-	"github.com/masudur-rahman/pawsitively-purrfect/models"
-	"github.com/stretchr/testify/assert"
-	"reflect"
+	"fmt"
 	"testing"
+
+	"github.com/rs/xid"
+
+	"github.com/masudur-rahman/database/sql"
+	"github.com/stretchr/testify/require"
+
+	"github.com/masudur-rahman/database/sql/sqlite/lib"
+	"github.com/stretchr/testify/assert"
 )
 
 type User struct {
-	ID    string `db:"id,pk"`
-	Name  string
-	Email string `db:"email,uq"`
+	ID       int64 `db:"id,pk"`
+	Name     string
+	FullName string
+	Email    string `db:"email,uq"`
+	Addr     string
 }
 
-func initialize() error {
+func initializeDB(t *testing.T) (sql.Database, func() error) {
 	conn, err := lib.GetSQLiteConnection("test.db")
-	if err != nil {
-		return err
-	}
+	require.Nil(t, err)
 
-	db := NewSqlite(context.Background(), conn)
-	return db.Sync(User{})
+	return NewSqlite(context.Background(), conn), conn.Close
 }
 
-func TestSqlite_InsertOne(t *testing.T) {
-	db := initialize()
+func TestPostgres_Sync(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+	err := db.Sync(User{})
+	assert.Nil(t, err)
+}
 
-	t.Run("should create pet", func(t *testing.T) {
-		id := "abc-xyz"
-		pet := models.Pet{
-			ID:     id,
-			Name:   "Cathy",
-			Gender: "Male",
-		}
+func TestPostgres_FindOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
 
-		gomock.InOrder(
-			db.EXPECT().InsertOne(gomock.Any()).Return(id, nil),
-		)
+	user := User{}
+	db = db.Table("user")
 
-		err := pr.Save(&pet)
-		assert.NoError(t, err)
-		assert.Equal(t, id, pet.XKey)
+	t.Run("find user by id", func(t *testing.T) {
+		has, err := db.ID(1).FindOne(&user)
+		assert.Nil(t, err)
+		assert.True(t, has)
+	})
+
+	t.Run("find user by filter", func(t *testing.T) {
+		has, err := db.Where("email LIKE ?", "%@test.test").FindOne(&user, User{})
+		assert.Nil(t, err)
+		assert.True(t, has)
 	})
 }
 
-func TestSqlite_InsertOne2(t *testing.T) {
-	type fields struct {
-		ctx       context.Context
-		conn      *sql.Conn
-		statement lib.Statement
-	}
-	type args struct {
-		document any
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantId  any
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pg := Sqlite{
-				ctx:       tt.fields.ctx,
-				conn:      tt.fields.conn,
-				statement: tt.fields.statement,
-			}
-			gotId, err := pg.InsertOne(tt.args.document)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("InsertOne() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(gotId, tt.wantId) {
-				t.Errorf("InsertOne() gotId = %v, want %v", gotId, tt.wantId)
-			}
-		})
-	}
+func TestPostgres_FindMany(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	var users []User
+	db = db.Table("user")
+
+	t.Run("find all", func(t *testing.T) {
+		err := db.FindMany(&users)
+		assert.Nil(t, err)
+	})
+
+	t.Run("find by filter", func(t *testing.T) {
+		err := db.FindMany(&users, User{Email: "masudjuly02@gmail.com"})
+		assert.Nil(t, err)
+	})
+
+	t.Run("find by where", func(t *testing.T) {
+		err := db.Where("name like 'masud%'").FindMany(&users)
+		assert.Nil(t, err)
+	})
+}
+
+func TestPostgres_InsertOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	db = db.Table("user")
+	t.Run("insert data", func(t *testing.T) {
+		suffix := xid.New().String()
+		user := User{
+			Name:     "test-" + suffix,
+			FullName: "Test Name",
+			Email:    fmt.Sprintf("test-%v@test.test", suffix),
+		}
+		id, err := db.InsertOne(&user)
+		assert.Nil(t, err)
+		assert.NotEqual(t, 0, id)
+	})
+}
+
+func TestPostgres_UpdateOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	db = db.Table("user")
+	t.Run("update data", func(t *testing.T) {
+		user := User{
+			FullName: "Test Name 2",
+		}
+		err := db.ID(1).UpdateOne(user)
+		assert.Nil(t, err)
+	})
+}
+
+func TestPostgres_DeleteOne(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	db = db.Table("user")
+	t.Run("delete data", func(t *testing.T) {
+		err := db.ID(4).DeleteOne()
+		assert.Nil(t, err)
+	})
+	t.Run("delete data from filter", func(t *testing.T) {
+		err := db.DeleteOne(User{ID: 3})
+		assert.Nil(t, err)
+	})
 }
