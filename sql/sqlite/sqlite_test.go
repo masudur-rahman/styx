@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rs/xid"
-
 	"github.com/masudur-rahman/database/sql"
-	"github.com/stretchr/testify/require"
-
 	"github.com/masudur-rahman/database/sql/sqlite/lib"
+
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type User struct {
