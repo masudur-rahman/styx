@@ -25,7 +25,7 @@ func initializeDB(t *testing.T) (sql.Database, func() error) {
 	conn, err := lib.GetSQLiteConnection("test.db")
 	require.Nil(t, err)
 
-	return NewSqlite(context.Background(), conn), conn.Close
+	return NewSQLite(context.Background(), conn), conn.Close
 }
 
 func TestPostgres_Sync(t *testing.T) {
