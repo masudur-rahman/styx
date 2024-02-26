@@ -156,3 +156,5 @@ func (s Supabase) Sync(a ...any) error {
 	//TODO implement me
 	panic("implement me")
 }
+
+func (s Supabase) Close() error { return nil }
