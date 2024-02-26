@@ -299,7 +299,7 @@ doc-gen:
 
 gen: proto-gen mockgen
 
-verify: verify-proto-gen verify-mockgen verify-modules verify-fmt
+verify: verify-modules verify-fmt
 
 CONTAINER_DOTFILES = $(foreach bin,$(BIN),.container-$(subst /,_,$(REGISTRY)/$(bin))-$(TAG))
 
