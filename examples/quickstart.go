@@ -1,15 +1,4 @@
-# database
-Database Engine for different SQL and NoSQL databases
-
-## Install
-```shell
-go get -u github.com/masudur-rahman/database
-```
-
-## Quickstart
-
-```go
-package main
+package examples
 
 import (
 	"context"
@@ -59,4 +48,3 @@ func main() {
 	db.ID(1).DeleteOne()              // delete by id
 	db.DeleteOne(User{Name: "masud"}) // delete using filter
 }
-```
