@@ -3,9 +3,9 @@ package arangodb
 import (
 	"context"
 
-	"github.com/masudur-rahman/database/dberr"
-	"github.com/masudur-rahman/database/nosql"
-	"github.com/masudur-rahman/database/pkg"
+	"github.com/masudur-rahman/styx/dberr"
+	"github.com/masudur-rahman/styx/nosql"
+	"github.com/masudur-rahman/styx/pkg"
 
 	arango "github.com/arangodb/go-driver"
 )
@@ -24,12 +24,12 @@ func NewArangoDB(ctx context.Context, db arango.Database) ArangoDB {
 	}
 }
 
-func (a ArangoDB) Collection(collection string) nosql.Database {
+func (a ArangoDB) Collection(collection string) nosql.Engine {
 	a.collectionName = collection
 	return a
 }
 
-func (a ArangoDB) ID(id string) nosql.Database {
+func (a ArangoDB) ID(id string) nosql.Engine {
 	a.id = id
 	return a
 }

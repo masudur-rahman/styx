@@ -1,9 +1,9 @@
-# database
+# Styx
 Database Engine for different SQL and NoSQL databases
 
 ## Install
 ```shell
-go get -u github.com/masudur-rahman/database
+go get -u github.com/masudur-rahman/styx
 ```
 
 ## Quickstart
@@ -15,9 +15,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/masudur-rahman/database/sql"
-	"github.com/masudur-rahman/database/sql/sqlite"
-	"github.com/masudur-rahman/database/sql/sqlite/lib"
+	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/sql/sqlite"
+	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 )
 
 type User struct {
@@ -33,8 +33,8 @@ func main() {
 	conn, _ := lib.GetSQLiteConnection("test.db")
 
 	// Start a database engine
-	var db sql.Database
-	db = sqlite.NewSqlite(context.Background(), conn)
+	var db sql.Engine
+	db = sqlite.NewSQLite(context.Background(), conn)
 
 	// Migrate database
 	db.Sync(User{})
@@ -59,4 +59,21 @@ func main() {
 	db.ID(1).DeleteOne()              // delete by id
 	db.DeleteOne(User{Name: "masud"}) // delete using filter
 }
+
 ```
+
+<br>
+<hr>
+
+### Why `styx` name is chosen as this go orm
+
+* **Mythological Connection:** In Greek mythology, the River Styx separates the world of the living from the world of the dead.
+Similarly, this ORM acts as a bridge  between your application code (the living) and the database (the "dead" storage).
+It facilitates the flow of data between these two realms.
+
+* **Focus on Data Access:**  The Styx was also considered a barrier or boundary.  Similarly, this ORM acts as a controlled point of access for your application to interact with the database.
+It ensures data integrity and prevents unauthorized modification.
+
+* **Symbolism:** The Styx is often depicted as a dark and mysterious river. This can be seen as a metaphor for the complexity of database interactions that this ORM simplifies for developers.
+
+Overall, Styx evokes a sense of connection, control, and hidden power, all of which are relevant functionalities of an ORM.

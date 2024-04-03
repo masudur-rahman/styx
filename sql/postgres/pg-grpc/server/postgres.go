@@ -7,9 +7,9 @@ import (
 	"log"
 	"net"
 
-	"github.com/masudur-rahman/database/pkg"
-	"github.com/masudur-rahman/database/sql/postgres/lib"
-	"github.com/masudur-rahman/database/sql/postgres/pg-grpc/pb"
+	"github.com/masudur-rahman/styx/pkg"
+	"github.com/masudur-rahman/styx/sql/postgres/lib"
+	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"google.golang.org/grpc"
 	health "google.golang.org/grpc/health/grpc_health_v1"

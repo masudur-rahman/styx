@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 
-	isql "github.com/masudur-rahman/database/sql"
-	"github.com/masudur-rahman/database/sql/postgres/lib"
+	isql "github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/sql/postgres/lib"
 )
 
 type Postgres struct {
@@ -20,9 +20,9 @@ func NewPostgres(ctx context.Context, conn *sql.Conn) Postgres {
 	return Postgres{ctx: ctx, conn: conn}
 }
 
-var _ isql.Database = Postgres{}
+var _ isql.Engine = Postgres{}
 
-func (pg Postgres) BeginTx() (isql.Database, error) {
+func (pg Postgres) BeginTx() (isql.Engine, error) {
 	if pg.tx != nil {
 		return nil, errors.New("session already in progress")
 	}
@@ -52,42 +52,42 @@ func (pg Postgres) Rollback() error {
 	return err
 }
 
-func (pg Postgres) Table(name string) isql.Database {
+func (pg Postgres) Table(name string) isql.Engine {
 	pg.statement = pg.statement.Table(name)
 	return pg
 }
 
-func (pg Postgres) ID(id any) isql.Database {
+func (pg Postgres) ID(id any) isql.Engine {
 	pg.statement = pg.statement.ID(id)
 	return pg
 }
 
-func (pg Postgres) In(col string, values ...any) isql.Database {
+func (pg Postgres) In(col string, values ...any) isql.Engine {
 	pg.statement = pg.statement.In(col, values...)
 	return pg
 }
 
-func (pg Postgres) Where(cond string, args ...any) isql.Database {
+func (pg Postgres) Where(cond string, args ...any) isql.Engine {
 	pg.statement = pg.statement.Where(cond, args...)
 	return pg
 }
 
-func (pg Postgres) Columns(cols ...string) isql.Database {
+func (pg Postgres) Columns(cols ...string) isql.Engine {
 	pg.statement = pg.statement.Columns(cols...)
 	return pg
 }
 
-func (pg Postgres) AllCols() isql.Database {
+func (pg Postgres) AllCols() isql.Engine {
 	pg.statement = pg.statement.AllCols()
 	return pg
 }
 
-func (pg Postgres) MustCols(cols ...string) isql.Database {
+func (pg Postgres) MustCols(cols ...string) isql.Engine {
 	pg.statement = pg.statement.MustCols(cols...)
 	return pg
 }
 
-func (pg Postgres) ShowSQL(showSQL bool) isql.Database {
+func (pg Postgres) ShowSQL(showSQL bool) isql.Engine {
 	pg.statement = pg.statement.ShowSQL(showSQL)
 	return pg
 }

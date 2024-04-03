@@ -1,9 +1,9 @@
 package mock
 
-type Database interface {
-	Entity(name string) Database
+type Engine interface {
+	Entity(name string) Engine
 
-	ID(id string) Database
+	ID(id string) Engine
 
 	FindOne(document interface{}, filter ...interface{}) (bool, error)
 	FindMany(documents interface{}, filter interface{}) error

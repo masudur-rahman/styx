@@ -1,6 +1,6 @@
 package dberr
 
-import "github.com/masudur-rahman/database/sql/postgres/lib"
+import "github.com/masudur-rahman/styx/sql/postgres/lib"
 
 func CheckEntityNameNonEmpty(entity string) error {
 	if entity == "" {

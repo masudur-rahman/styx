@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/masudur-rahman/database/dberr"
-	isql "github.com/masudur-rahman/database/sql"
+	"github.com/masudur-rahman/styx/dberr"
+	isql "github.com/masudur-rahman/styx/sql"
 
 	"github.com/nedpals/supabase-go"
 )
@@ -24,32 +24,32 @@ func NewSupabase(ctx context.Context, client *supabase.Client) Supabase {
 	}
 }
 
-func (s Supabase) Table(name string) isql.Database {
+func (s Supabase) Table(name string) isql.Engine {
 	s.table = name
 	return s
 }
 
-func (s Supabase) ID(id any) isql.Database {
+func (s Supabase) ID(id any) isql.Engine {
 	s.id = id
 	return s
 }
 
-func (s Supabase) In(col string, values ...any) isql.Database {
+func (s Supabase) In(col string, values ...any) isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s Supabase) Where(cond string, args ...any) isql.Database {
+func (s Supabase) Where(cond string, args ...any) isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s Supabase) Columns(cols ...string) isql.Database {
+func (s Supabase) Columns(cols ...string) isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s Supabase) AllCols() isql.Database {
+func (s Supabase) AllCols() isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }

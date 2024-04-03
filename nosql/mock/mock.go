@@ -8,10 +8,10 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	nosql "github.com/masudur-rahman/database/nosql"
+	nosql "github.com/masudur-rahman/styx/nosql"
 )
 
-// MockDatabase is a mock of Database interface.
+// MockDatabase is a mock of Engine interface.
 type MockDatabase struct {
 	ctrl     *gomock.Controller
 	recorder *MockDatabaseMockRecorder
@@ -35,10 +35,10 @@ func (m *MockDatabase) EXPECT() *MockDatabaseMockRecorder {
 }
 
 // Collection mocks base method.
-func (m *MockDatabase) Collection(name string) nosql.Database {
+func (m *MockDatabase) Collection(name string) nosql.Engine {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Collection", name)
-	ret0, _ := ret[0].(nosql.Database)
+	ret0, _ := ret[0].(nosql.Engine)
 	return ret0
 }
 
@@ -101,10 +101,10 @@ func (mr *MockDatabaseMockRecorder) FindOne(document interface{}, filter ...inte
 }
 
 // ID mocks base method.
-func (m *MockDatabase) ID(id string) nosql.Database {
+func (m *MockDatabase) ID(id string) nosql.Engine {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ID", id)
-	ret0, _ := ret[0].(nosql.Database)
+	ret0, _ := ret[0].(nosql.Engine)
 	return ret0
 }
 

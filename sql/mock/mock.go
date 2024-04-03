@@ -9,10 +9,10 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	sql0 "github.com/masudur-rahman/database/sql"
+	sql0 "github.com/masudur-rahman/styx/sql"
 )
 
-// MockDatabase is a mock of Database interface.
+// MockDatabase is a mock of Engine interface.
 type MockDatabase struct {
 	ctrl     *gomock.Controller
 	recorder *MockDatabaseMockRecorder
@@ -108,10 +108,10 @@ func (mr *MockDatabaseMockRecorder) FindOne(document interface{}, filter ...inte
 }
 
 // ID mocks base method.
-func (m *MockDatabase) ID(id string) sql0.Database {
+func (m *MockDatabase) ID(id string) sql0.Engine {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ID", id)
-	ret0, _ := ret[0].(sql0.Database)
+	ret0, _ := ret[0].(sql0.Engine)
 	return ret0
 }
 
@@ -172,10 +172,10 @@ func (mr *MockDatabaseMockRecorder) Query(query interface{}, args ...interface{}
 }
 
 // Table mocks base method.
-func (m *MockDatabase) Table(name string) sql0.Database {
+func (m *MockDatabase) Table(name string) sql0.Engine {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Table", name)
-	ret0, _ := ret[0].(sql0.Database)
+	ret0, _ := ret[0].(sql0.Engine)
 	return ret0
 }
 

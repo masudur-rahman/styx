@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/masudur-rahman/database/sql"
-	"github.com/masudur-rahman/database/sql/sqlite/lib"
+	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +21,7 @@ type User struct {
 	Addr     string
 }
 
-func initializeDB(t *testing.T) (sql.Database, func() error) {
+func initializeDB(t *testing.T) (sql.Engine, func() error) {
 	conn, err := lib.GetSQLiteConnection("test.db")
 	require.Nil(t, err)
 
@@ -38,6 +38,13 @@ func TestPostgres_Sync(t *testing.T) {
 func TestPostgres_FindOne(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
+
+	db, err := db.BeginTx()
+	assert.Nil(t, err)
+	defer func() {
+		err = db.Commit()
+		assert.Nil(t, err)
+	}()
 
 	user := User{}
 	db = db.Table("user")
@@ -82,6 +89,9 @@ func TestPostgres_InsertOne(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
 
+	db, err := db.BeginTx()
+	assert.Nil(t, err)
+
 	db = db.Table("user")
 	t.Run("insert data", func(t *testing.T) {
 		suffix := xid.New().String()
@@ -93,6 +103,13 @@ func TestPostgres_InsertOne(t *testing.T) {
 		id, err := db.InsertOne(&user)
 		assert.Nil(t, err)
 		assert.NotEqual(t, 0, id)
+		if err != nil {
+			err = db.Rollback()
+			assert.Nil(t, err)
+		}
+
+		err = db.Commit()
+		assert.Nil(t, err)
 	})
 }
 

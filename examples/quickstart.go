@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/masudur-rahman/database/sql"
-	"github.com/masudur-rahman/database/sql/sqlite"
-	"github.com/masudur-rahman/database/sql/sqlite/lib"
+	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/sql/sqlite"
+	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 )
 
 type User struct {
@@ -22,8 +22,8 @@ func main() {
 	conn, _ := lib.GetSQLiteConnection("test.db")
 
 	// Start a database engine
-	var db sql.Database
-	db = sqlite.NewSqlite(context.Background(), conn)
+	var db sql.Engine
+	db = sqlite.NewSQLite(context.Background(), conn)
 
 	// Migrate database
 	db.Sync(User{})
