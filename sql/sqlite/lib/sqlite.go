@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/masudur-rahman/database/pkg"
-	"github.com/masudur-rahman/database/sql/postgres/pg-grpc/pb"
+	"github.com/masudur-rahman/styx/pkg"
+	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
 	_ "modernc.org/sqlite"

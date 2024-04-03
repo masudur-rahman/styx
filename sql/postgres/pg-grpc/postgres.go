@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/masudur-rahman/database/dberr"
-	"github.com/masudur-rahman/database/pkg"
-	isql "github.com/masudur-rahman/database/sql"
-	"github.com/masudur-rahman/database/sql/postgres/pg-grpc/pb"
+	"github.com/masudur-rahman/styx/dberr"
+	"github.com/masudur-rahman/styx/pkg"
+	isql "github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -27,32 +27,32 @@ func NewDatabase(ctx context.Context, client pb.PostgresClient) Database {
 	}
 }
 
-func (d Database) Table(name string) isql.Database {
+func (d Database) Table(name string) isql.Engine {
 	d.table = name
 	return d
 }
 
-func (d Database) ID(id any) isql.Database {
+func (d Database) ID(id any) isql.Engine {
 	d.id = id
 	return d
 }
 
-func (d Database) In(s string, a ...any) isql.Database {
+func (d Database) In(s string, a ...any) isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d Database) Where(s string, a ...any) isql.Database {
+func (d Database) Where(s string, a ...any) isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d Database) Columns(s ...string) isql.Database {
+func (d Database) Columns(s ...string) isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d Database) AllCols() isql.Database {
+func (d Database) AllCols() isql.Engine {
 	//TODO implement me
 	panic("implement me")
 }

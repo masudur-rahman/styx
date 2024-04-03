@@ -3,8 +3,8 @@ package _map
 import (
 	"reflect"
 
-	"github.com/masudur-rahman/database/dberr"
-	"github.com/masudur-rahman/database/mock"
+	"github.com/masudur-rahman/styx/dberr"
+	"github.com/masudur-rahman/styx/mock"
 
 	"github.com/rs/xid"
 )
@@ -21,12 +21,12 @@ func NewMockDB() *MockDB {
 	}
 }
 
-func (m *MockDB) Entity(name string) mock.Database {
+func (m *MockDB) Entity(name string) mock.Engine {
 	m.entity = name
 	return m
 }
 
-func (m *MockDB) ID(id string) mock.Database {
+func (m *MockDB) ID(id string) mock.Engine {
 	m.id = id
 	return m
 }

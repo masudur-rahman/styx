@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/masudur-rahman/database/sql"
-	"github.com/masudur-rahman/database/sql/postgres"
-	"github.com/masudur-rahman/database/sql/postgres/lib"
+	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/sql/postgres"
+	"github.com/masudur-rahman/styx/sql/postgres/lib"
 
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +23,7 @@ type TestUser struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-func initializeDB(t *testing.T) (sql.Database, func() error) {
+func initializeDB(t *testing.T) (sql.Engine, func() error) {
 	cfg := lib.PostgresConfig{
 		Name:     "test",
 		Host:     "localhost",
@@ -100,6 +100,7 @@ func TestPostgres_FindMany(t *testing.T) {
 func TestPostgres_InsertOne(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
+
 	db, err := db.BeginTx()
 	assert.Nil(t, err)
 
