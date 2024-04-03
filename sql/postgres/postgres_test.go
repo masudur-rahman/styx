@@ -51,6 +51,13 @@ func TestPostgres_FindOne(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
 
+	db, err := db.BeginTx()
+	assert.Nil(t, err)
+	defer func() {
+		err = db.Commit()
+		assert.Nil(t, err)
+	}()
+
 	user := TestUser{}
 	db = db.Table("test_user")
 
@@ -93,10 +100,13 @@ func TestPostgres_FindMany(t *testing.T) {
 func TestPostgres_InsertOne(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
+	db, err := db.BeginTx()
+	assert.Nil(t, err)
 
 	db = db.Table("test_user")
 	t.Run("insert data", func(t *testing.T) {
 		suffix := xid.New().String()
+		//suffix := "hello"
 		user := TestUser{
 			Name:     "test-" + suffix,
 			FullName: "Test Name",
@@ -105,6 +115,13 @@ func TestPostgres_InsertOne(t *testing.T) {
 		id, err := db.InsertOne(&user)
 		assert.Nil(t, err)
 		assert.NotEqual(t, 0, id)
+		if err != nil {
+			err = db.Rollback()
+			assert.Nil(t, err)
+		}
+
+		err = db.Commit()
+		assert.Nil(t, err)
 	})
 }
 
