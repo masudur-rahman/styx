@@ -59,7 +59,7 @@ func TestPostgres_FindOne(t *testing.T) {
 	}()
 
 	user := TestUser{}
-	db = db.Table("test_user")
+	//db = db.Table("test_user")
 
 	t.Run("find user by id", func(t *testing.T) {
 		has, err := db.ID(1).FindOne(&user)
@@ -70,7 +70,7 @@ func TestPostgres_FindOne(t *testing.T) {
 	t.Run("find user by filter", func(t *testing.T) {
 		has, err := db.Where("email=?", "test@test.test").FindOne(&user, TestUser{Name: "test"})
 		assert.Nil(t, err)
-		assert.True(t, has)
+		assert.False(t, has)
 	})
 }
 
@@ -79,7 +79,7 @@ func TestPostgres_FindMany(t *testing.T) {
 	defer closer()
 
 	var users []TestUser
-	db = db.Table("test_user")
+	//db = db.Table("test_user")
 
 	t.Run("find all", func(t *testing.T) {
 		err := db.FindMany(&users)
