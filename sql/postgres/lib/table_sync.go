@@ -17,12 +17,16 @@ type fieldInfo struct {
 	IsComposite bool
 }
 
-func getTableName(table interface{}) string {
+func GenerateTableName(table interface{}) string {
 	tableType := reflect.TypeOf(table)
 	tableValue := reflect.ValueOf(table)
 	if tableType.Kind() == reflect.Ptr {
 		tableType = tableType.Elem()
-		tableValue = tableValue.Elem()
+		tableValue = reflect.New(tableType)
+	}
+	if tableType.Kind() == reflect.Slice {
+		tableType = tableType.Elem()
+		tableValue = reflect.New(tableType)
 	}
 	tableName := tableType.Name()
 	tableName = strcase.ToSnake(tableName)
@@ -357,7 +361,7 @@ func contains(slice []string, val string) bool {
 }
 
 func SyncTable(ctx context.Context, conn *sql.Conn, table any) error {
-	tableName := getTableName(table)
+	tableName := GenerateTableName(table)
 	fields, err := getTableInfo(table)
 	if err != nil {
 		return err

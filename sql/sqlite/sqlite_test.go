@@ -67,7 +67,7 @@ func TestPostgres_FindMany(t *testing.T) {
 	defer closer()
 
 	var users []User
-	db = db.Table("user")
+	//db = db.Table("user")
 
 	t.Run("find all", func(t *testing.T) {
 		err := db.FindMany(&users)

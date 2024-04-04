@@ -99,7 +99,7 @@ func (pg Postgres) FindOne(document any, filter ...any) (bool, error) {
 		return false, err
 	}
 
-	query := pg.statement.GenerateReadQuery()
+	query := pg.statement.GenerateReadQuery(document)
 	err := pg.statement.ExecuteReadQuery(pg.ctx, pg.conn, pg.tx, query, document)
 	if err == nil {
 		return true, nil
@@ -114,7 +114,7 @@ func (pg Postgres) FindOne(document any, filter ...any) (bool, error) {
 func (pg Postgres) FindMany(documents any, filter ...any) error {
 	pg.statement = pg.statement.GenerateWhereClause(filter...)
 
-	query := pg.statement.GenerateReadQuery()
+	query := pg.statement.GenerateReadQuery(documents)
 	return pg.statement.ExecuteReadQuery(pg.ctx, pg.conn, pg.tx, query, documents)
 }
 
