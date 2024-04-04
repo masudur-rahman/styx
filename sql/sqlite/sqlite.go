@@ -101,7 +101,7 @@ func (sq SQLite) FindOne(document any, filter ...any) (bool, error) {
 		return false, err
 	}
 
-	query := sq.statement.GenerateReadQuery()
+	query := sq.statement.GenerateReadQuery(document)
 	err := sq.statement.ExecuteReadQuery(sq.ctx, sq.conn, sq.tx, query, document)
 	if err == nil {
 		return true, nil
@@ -116,7 +116,7 @@ func (sq SQLite) FindOne(document any, filter ...any) (bool, error) {
 func (sq SQLite) FindMany(documents any, filter ...any) error {
 	sq.statement = sq.statement.GenerateWhereClause(filter...)
 
-	query := sq.statement.GenerateReadQuery()
+	query := sq.statement.GenerateReadQuery(documents)
 	return sq.statement.ExecuteReadQuery(sq.ctx, sq.conn, sq.tx, query, documents)
 }
 
