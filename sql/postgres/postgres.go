@@ -153,7 +153,9 @@ func (pg Postgres) InsertMany(documents []any) ([]any, error) {
 func assignID(document any, id any) (any, error) {
 	val := reflect.ValueOf(document)
 	if val.Kind() != reflect.Ptr {
-		return id, fmt.Errorf("document must be a pointer to a struct")
+		return document, nil
+		// first make it backward compatible
+		// return id, fmt.Errorf("document must be a pointer to a struct")
 	}
 
 	valElem := val.Elem()
