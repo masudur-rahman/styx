@@ -13,6 +13,7 @@ import (
 	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
+
 	_ "github.com/lib/pq"
 )
 
