@@ -125,6 +125,7 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 			for _, part := range strings.Fields(tagParts[1]) {
 				switch strings.ToUpper(part) {
 				case "PK":
+					autoincr = true
 					constraints = append(constraints, "PRIMARY KEY")
 				case "UQ":
 					constraints = append(constraints, "UNIQUE")
@@ -167,8 +168,10 @@ func getUniqueColumnGroups(t reflect.Type) [][]string {
 func getSQLType(fieldType reflect.Type, autoincr bool) string {
 	if autoincr {
 		switch fieldType.Kind() {
-		case reflect.Int, reflect.Int32, reflect.Int64, reflect.Uint64:
+		case reflect.Int, reflect.Int32:
 			return "SERIAL"
+		case reflect.Int64, reflect.Uint64:
+			return "BIGSERIAL"
 		}
 	}
 
