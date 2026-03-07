@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/masudur-rahman/styx/dberr"
 	"github.com/masudur-rahman/styx/sql"
 	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 
@@ -140,4 +141,26 @@ func TestPostgres_DeleteOne(t *testing.T) {
 		err := db.DeleteOne(User{ID: 3})
 		assert.Nil(t, err)
 	})
+}
+
+func TestUpdateOne_nonExistentRow(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	err := db.Sync(User{})
+	require.Nil(t, err)
+
+	err = db.Table("user").ID(999999).UpdateOne(User{FullName: "ghost"})
+	assert.ErrorIs(t, err, dberr.DataNotFound)
+}
+
+func TestDeleteOne_nonExistentRow(t *testing.T) {
+	db, closer := initializeDB(t)
+	defer closer()
+
+	err := db.Sync(User{})
+	require.Nil(t, err)
+
+	err = db.Table("user").ID(999999).DeleteOne()
+	assert.ErrorIs(t, err, dberr.DataNotFound)
 }
