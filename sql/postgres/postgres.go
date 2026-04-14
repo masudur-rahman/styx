@@ -91,6 +91,11 @@ func (pg Postgres) MustCols(cols ...string) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) MustFilterCols(cols ...string) isql.Engine {
+	pg.statement = pg.statement.MustFilterCols(cols...)
+	return pg
+}
+
 func (pg Postgres) ShowSQL(showSQL bool) isql.Engine {
 	pg.statement = pg.statement.ShowSQL(showSQL)
 	return pg

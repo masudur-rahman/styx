@@ -17,6 +17,7 @@ type Engine interface {
 	Columns(cols ...string) Engine
 	AllCols() Engine
 	MustCols(cols ...string) Engine
+	MustFilterCols(cols ...string) Engine
 	ShowSQL(showSQL bool) Engine
 
 	FindOne(document any, filter ...any) (bool, error)

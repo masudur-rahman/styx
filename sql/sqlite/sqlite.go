@@ -93,6 +93,11 @@ func (sq SQLite) MustCols(cols ...string) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) MustFilterCols(cols ...string) isql.Engine {
+	sq.statement = sq.statement.MustFilterCols(cols...)
+	return sq
+}
+
 func (sq SQLite) ShowSQL(showSQL bool) isql.Engine {
 	sq.statement = sq.statement.ShowSQL(showSQL)
 	return sq

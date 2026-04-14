@@ -54,6 +54,21 @@ func (s Supabase) AllCols() isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) MustCols(cols ...string) isql.Engine {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s Supabase) MustFilterCols(cols ...string) isql.Engine {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s Supabase) ShowSQL(showSQL bool) isql.Engine {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s Supabase) FindOne(document interface{}, filter ...interface{}) (bool, error) {
 	if err := dberr.CheckIdOrFilterNonEmpty(s.id, filter); err != nil {
 		return false, err

@@ -185,6 +185,24 @@ func (mr *MockDatabaseMockRecorder) Table(name interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Table", reflect.TypeOf((*MockDatabase)(nil).Table), name)
 }
 
+// MustFilterCols mocks base method.
+func (m *MockDatabase) MustFilterCols(cols ...string) sql0.Engine {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{}
+	for _, a := range cols {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "MustFilterCols", varargs...)
+	ret0, _ := ret[0].(sql0.Engine)
+	return ret0
+}
+
+// MustFilterCols indicates an expected call of MustFilterCols.
+func (mr *MockDatabaseMockRecorder) MustFilterCols(cols ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MustFilterCols", reflect.TypeOf((*MockDatabase)(nil).MustFilterCols), cols...)
+}
+
 // UpdateOne mocks base method.
 func (m *MockDatabase) UpdateOne(document interface{}) error {
 	m.ctrl.T.Helper()
