@@ -47,6 +47,45 @@ func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
 	assert.Contains(t, query, "score")
 }
 
+type whereTestDoc struct {
+	UserID     int64  `db:"user_id"`
+	CategoryID string `db:"category_id"`
+	Score      int    `db:"score"`
+}
+
+func TestGenerateWhereClauseFromFilter_skipsZeroValues(t *testing.T) {
+	stmt := Statement{}
+	filter := whereTestDoc{UserID: 99}
+
+	clause := stmt.GenerateWhereClauseFromFilter(filter)
+
+	assert.Contains(t, clause, "user_id")
+	assert.NotContains(t, clause, "category_id")
+	assert.NotContains(t, clause, "score")
+}
+
+func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroString(t *testing.T) {
+	stmt := Statement{}.MustFilterCols("category_id")
+	filter := whereTestDoc{UserID: 99}
+
+	clause := stmt.GenerateWhereClauseFromFilter(filter)
+
+	assert.Contains(t, clause, "user_id=99")
+	assert.Contains(t, clause, "category_id=''")
+	assert.NotContains(t, clause, "score")
+}
+
+func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroInt(t *testing.T) {
+	stmt := Statement{}.MustFilterCols("score")
+	filter := whereTestDoc{UserID: 99}
+
+	clause := stmt.GenerateWhereClauseFromFilter(filter)
+
+	assert.Contains(t, clause, "user_id=99")
+	assert.Contains(t, clause, "score=0")
+	assert.NotContains(t, clause, "category_id")
+}
+
 func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
 	stmt := Statement{}.Table("test_doc").AllCols()
 	doc := insertTestDoc{Name: "alice"}

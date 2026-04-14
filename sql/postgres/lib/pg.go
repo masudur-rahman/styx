@@ -122,17 +122,21 @@ func GenerateWhereClauseFromID(id any) string {
 	return strings.Join([]string{col, value}, "=")
 }
 
-func GenerateWhereClauseFromFilter(filter any) string {
+// GenerateWhereClauseFromFilter builds WHERE conditions from a struct filter.
+// Respects MustFilterCols to include zero-valued fields in the clause.
+func (stmt Statement) GenerateWhereClauseFromFilter(filter any) string {
+	stmt.mustFilterColMap = stmt.generateMustFilterColMap()
 	var conditions []string
 
 	val := reflect.ValueOf(filter)
 	for idx := 0; idx < val.NumField(); idx++ {
 		field := val.Type().Field(idx)
-		if val.Field(idx).IsZero() {
+		col := getFieldName(field)
+
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || !val.Field(idx).IsZero()) {
 			continue
 		}
 
-		col := getFieldName(field)
 		value := formatValues(val.Field(idx).Interface())
 		condition := strings.Join([]string{col, value}, "=")
 		conditions = append(conditions, condition)

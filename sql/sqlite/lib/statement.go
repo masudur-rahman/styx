@@ -10,16 +10,18 @@ import (
 )
 
 type Statement struct {
-	table      string
-	id         any
-	columns    []string
-	allCols    bool
-	mustCols   []string
-	mustColMap map[string]bool
-	where      string
-	args       []any
-	argCounter int
-	showSQL    bool
+	table            string
+	id               any
+	columns          []string
+	allCols          bool
+	mustCols         []string
+	mustColMap       map[string]bool
+	mustFilterCols   []string
+	mustFilterColMap map[string]bool
+	where            string
+	args             []any
+	argCounter       int
+	showSQL          bool
 }
 
 func (stmt Statement) Table(name string) Statement {
@@ -60,7 +62,7 @@ func (stmt Statement) Where(cond string, args ...any) Statement {
 func (stmt Statement) GenerateWhereClause(filter ...any) Statement {
 	stmt.where = stmt.AddWhereClause(GenerateWhereClauseFromID(stmt.id))
 	if len(filter) > 0 {
-		stmt.where = stmt.AddWhereClause(GenerateWhereClauseFromFilter(filter[0]))
+		stmt.where = stmt.AddWhereClause(stmt.GenerateWhereClauseFromFilter(filter[0]))
 	}
 	return stmt
 }
@@ -93,6 +95,12 @@ func (stmt Statement) AllCols() Statement {
 
 func (stmt Statement) MustCols(cols ...string) Statement {
 	stmt.mustCols = cols
+	return stmt
+}
+
+// MustFilterCols marks columns that must be included in WHERE clauses even when zero-valued.
+func (stmt Statement) MustFilterCols(cols ...string) Statement {
+	stmt.mustFilterCols = cols
 	return stmt
 }
 
@@ -244,6 +252,14 @@ func (stmt Statement) generateMustColMap() map[string]bool {
 		stmt.mustColMap[col] = true
 	}
 	return stmt.mustColMap
+}
+
+func (stmt Statement) generateMustFilterColMap() map[string]bool {
+	stmt.mustFilterColMap = map[string]bool{}
+	for _, col := range stmt.mustFilterCols {
+		stmt.mustFilterColMap[col] = true
+	}
+	return stmt.mustFilterColMap
 }
 
 func (stmt Statement) GenerateUpdateQuery(doc any) string {
