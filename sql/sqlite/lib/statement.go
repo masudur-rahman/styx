@@ -196,7 +196,7 @@ func (stmt Statement) GenerateInsertQuery(doc any) string {
 		field := rvalue.Type().Field(idx)
 		col := getFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || hasNoskipTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
@@ -273,7 +273,7 @@ func (stmt Statement) GenerateUpdateQuery(doc any) string {
 		field := rvalue.Type().Field(idx)
 		col := getFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || hasNoskipTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 

@@ -133,7 +133,7 @@ func (stmt Statement) GenerateWhereClauseFromFilter(filter any) string {
 		field := val.Type().Field(idx)
 		col := getFieldName(field)
 
-		if !(stmt.allCols || stmt.mustFilterColMap[col] || !val.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || hasNoskipTag(field) || !val.Field(idx).IsZero()) {
 			continue
 		}
 
