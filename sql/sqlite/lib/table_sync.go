@@ -170,6 +170,43 @@ func hasReqTag(field reflect.StructField) bool {
 	return false
 }
 
+// ExtractPKColumn returns the primary key column name from a struct's pk tag.
+// Returns "id" as default if no pk tag is found.
+func ExtractPKColumn(table any) string {
+	tableType := reflect.TypeOf(table)
+	if tableType.Kind() == reflect.Ptr {
+		tableType = tableType.Elem()
+	}
+	if tableType.Kind() == reflect.Slice {
+		tableType = tableType.Elem()
+	}
+	if tableType.Kind() != reflect.Struct {
+		return "id"
+	}
+
+	for i := 0; i < tableType.NumField(); i++ {
+		field := tableType.Field(i)
+		dbTag := field.Tag.Get("db")
+		if dbTag == "" {
+			continue
+		}
+		parts := strings.SplitN(dbTag, ",", 2)
+		if len(parts) >= 2 {
+			for _, part := range strings.Fields(parts[1]) {
+				if strings.ToUpper(part) == "PK" {
+					colName := parts[0]
+					if colName == "" {
+						colName = strcase.ToSnake(field.Name)
+					}
+					return colName
+				}
+			}
+		}
+	}
+
+	return "id"
+}
+
 func getUniqueColumnGroups(t reflect.Type) [][]string {
 	groups := map[int][]string{}
 	groupIndex := 0

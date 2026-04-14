@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -28,7 +27,7 @@ var _ isql.Engine = Postgres{}
 
 func (pg Postgres) BeginTx() (isql.Engine, error) {
 	if pg.tx != nil {
-		return nil, errors.New("session already in progress")
+		return nil, dberr.ErrTransactionAlreadyStarted
 	}
 	tx, err := pg.conn.BeginTx(pg.ctx, nil)
 	if err != nil {
@@ -40,7 +39,7 @@ func (pg Postgres) BeginTx() (isql.Engine, error) {
 
 func (pg Postgres) Commit() error {
 	if pg.tx == nil {
-		return errors.New("no transaction in progress")
+		return dberr.ErrTransactionNotStarted
 	}
 	err := pg.tx.Commit()
 	pg.tx = nil
@@ -49,7 +48,7 @@ func (pg Postgres) Commit() error {
 
 func (pg Postgres) Rollback() error {
 	if pg.tx == nil {
-		return errors.New("no transaction in progress")
+		return dberr.ErrTransactionNotStarted
 	}
 	err := pg.tx.Rollback()
 	pg.tx = nil
@@ -128,6 +127,8 @@ func (pg Postgres) FindMany(documents any, filter ...any) error {
 }
 
 func (pg Postgres) InsertOne(document any) (id any, err error) {
+	pkCol := lib.ExtractPKColumn(document)
+	pg.statement = pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
 	id, err = pg.statement.ExecuteInsertQuery(pg.ctx, pg.conn, pg.tx, query)
 	if err != nil {
@@ -139,14 +140,15 @@ func (pg Postgres) InsertOne(document any) (id any, err error) {
 func (pg Postgres) InsertMany(documents []any) ([]any, error) {
 	var ids []any
 	for _, doc := range documents {
+		pkCol := lib.ExtractPKColumn(doc)
+		pg.statement = pg.statement.PKColumn(pkCol)
 		query := pg.statement.GenerateInsertQuery(doc)
 		id, err := pg.statement.ExecuteInsertQuery(pg.ctx, pg.conn, pg.tx, query)
 		if err != nil {
 			return nil, err
 		}
 
-		// todo: test this
-		_, err = assignID(&doc, id)
+		_, err = assignID(doc, id)
 		if err != nil {
 			return nil, err
 		}

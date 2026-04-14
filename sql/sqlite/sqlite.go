@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -30,7 +29,7 @@ var _ isql.Engine = SQLite{}
 
 func (sq SQLite) BeginTx() (isql.Engine, error) {
 	if sq.tx != nil {
-		return nil, errors.New("session already in progress")
+		return nil, dberr.ErrTransactionAlreadyStarted
 	}
 	tx, err := sq.conn.BeginTx(sq.ctx, nil)
 	if err != nil {
@@ -42,7 +41,7 @@ func (sq SQLite) BeginTx() (isql.Engine, error) {
 
 func (sq SQLite) Commit() error {
 	if sq.tx == nil {
-		return errors.New("no transaction in progress")
+		return dberr.ErrTransactionNotStarted
 	}
 	err := sq.tx.Commit()
 	sq.tx = nil
@@ -51,7 +50,7 @@ func (sq SQLite) Commit() error {
 
 func (sq SQLite) Rollback() error {
 	if sq.tx == nil {
-		return errors.New("no transaction in progress")
+		return dberr.ErrTransactionNotStarted
 	}
 	err := sq.tx.Rollback()
 	sq.tx = nil
@@ -130,6 +129,8 @@ func (sq SQLite) FindMany(documents any, filter ...any) error {
 }
 
 func (sq SQLite) InsertOne(document any) (id any, err error) {
+	pkCol := lib.ExtractPKColumn(document)
+	sq.statement = sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
 	id, err = sq.statement.ExecuteInsertQuery(sq.ctx, sq.conn, sq.tx, query)
 	if err != nil {
@@ -141,18 +142,18 @@ func (sq SQLite) InsertOne(document any) (id any, err error) {
 func (sq SQLite) InsertMany(documents []any) ([]any, error) {
 	var ids []any
 	for _, doc := range documents {
+		pkCol := lib.ExtractPKColumn(doc)
+		sq.statement = sq.statement.PKColumn(pkCol)
 		query := sq.statement.GenerateInsertQuery(doc)
 		id, err := sq.statement.ExecuteInsertQuery(sq.ctx, sq.conn, sq.tx, query)
 		if err != nil {
 			return nil, err
 		}
 
-		// todo: test this
-		_, err = assignID(&doc, id)
+		_, err = assignID(doc, id)
 		if err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
 		ids = append(ids, id)
 	}
 

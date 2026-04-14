@@ -7,6 +7,8 @@ import (
 	"log"
 	"reflect"
 	"strings"
+
+	"github.com/masudur-rahman/styx/dberr"
 )
 
 type Statement struct {
@@ -22,6 +24,7 @@ type Statement struct {
 	args             []any
 	argCounter       int
 	showSQL          bool
+	pkColumn         string
 }
 
 func (stmt Statement) Table(name string) Statement {
@@ -43,7 +46,14 @@ func (stmt Statement) In(col string, values ...any) Statement {
 		stmt.where += " AND "
 	}
 
-	stmt.where += fmt.Sprintf("%s IN %s", col, HandleSliceAny(values))
+	// Use parameterized placeholders instead of direct string formatting
+	placeholders := make([]string, len(values))
+	for i := range values {
+		stmt.argCounter++
+		placeholders[i] = fmt.Sprintf("$%d", stmt.argCounter)
+	}
+	stmt.args = append(stmt.args, values...)
+	stmt.where += fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ", "))
 	return stmt
 }
 
@@ -54,7 +64,10 @@ func (stmt Statement) Where(cond string, args ...any) Statement {
 	}
 	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
-		stmt.args = append(stmt.args, args...)
+		// Create a new slice to avoid sharing underlying array
+		newArgs := make([]any, len(args))
+		copy(newArgs, args)
+		stmt.args = append(stmt.args, newArgs...)
 	}
 	return stmt
 }
@@ -69,7 +82,7 @@ func (stmt Statement) GenerateWhereClause(filter ...any) Statement {
 
 func (stmt Statement) CheckWhereClauseNotEmpty() error {
 	if stmt.where == "" {
-		return fmt.Errorf("no filter parameter passed")
+		return dberr.ErrMissingWhereClause
 	}
 	return nil
 }
@@ -106,6 +119,12 @@ func (stmt Statement) MustFilterCols(cols ...string) Statement {
 
 func (stmt Statement) ShowSQL(showSQL bool) Statement {
 	stmt.showSQL = showSQL
+	return stmt
+}
+
+// PKColumn sets the primary key column name for RETURNING clause in INSERT queries.
+func (stmt Statement) PKColumn(col string) Statement {
+	stmt.pkColumn = col
 	return stmt
 }
 
@@ -216,7 +235,11 @@ func (stmt Statement) GenerateInsertQuery(doc any) string {
 }
 
 func (stmt Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.Conn, tx *sql.Tx, query string) (any, error) {
-	query += " RETURNING id;"
+	pkCol := stmt.pkColumn
+	if pkCol == "" {
+		pkCol = "id"
+	}
+	query += fmt.Sprintf(" RETURNING %s;", pkCol)
 	if stmt.showSQL {
 		log.Printf("Insert Query: query: %v, args: %v\n", query, stmt.args)
 	}

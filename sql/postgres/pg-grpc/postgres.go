@@ -27,6 +27,18 @@ func NewDatabase(ctx context.Context, client pb.PostgresClient) Database {
 	}
 }
 
+func (d Database) BeginTx() (isql.Engine, error) {
+	return nil, dberr.ErrTransactionNotStarted
+}
+
+func (d Database) Commit() error {
+	return dberr.ErrTransactionNotStarted
+}
+
+func (d Database) Rollback() error {
+	return dberr.ErrTransactionNotStarted
+}
+
 func (d Database) Table(name string) isql.Engine {
 	d.table = name
 	return d
@@ -38,26 +50,34 @@ func (d Database) ID(id any) isql.Engine {
 }
 
 func (d Database) In(s string, a ...any) isql.Engine {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (d Database) Where(s string, a ...any) isql.Engine {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (d Database) Columns(s ...string) isql.Engine {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (d Database) AllCols() isql.Engine {
-	//TODO implement me
 	panic("implement me")
 }
 
-func (d Database) FindOne(document interface{}, filter ...interface{}) (bool, error) {
+func (d Database) MustCols(cols ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) MustFilterCols(cols ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) ShowSQL(showSQL bool) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) FindOne(document any, filter ...any) (bool, error) {
 	var err error
 	if err = dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {
 		return false, err
@@ -66,9 +86,10 @@ func (d Database) FindOne(document interface{}, filter ...interface{}) (bool, er
 	record := new(pb.RecordResponse)
 
 	if filter == nil {
+		idStr, _ := d.id.(string)
 		record, err = d.client.GetById(d.ctx, &pb.IdParams{
 			Table: d.table,
-			Id:    d.id,
+			Id:    idStr,
 		})
 	} else {
 		var af *anypb.Any
@@ -96,7 +117,7 @@ func (d Database) FindOne(document interface{}, filter ...interface{}) (bool, er
 	return true, nil
 }
 
-func (d Database) FindMany(documents interface{}, filter ...interface{}) error {
+func (d Database) FindMany(documents any, filter ...any) error {
 	af, err := pkg.ToProtoAny(filter)
 	if err != nil {
 		return err
@@ -122,10 +143,10 @@ func (d Database) FindMany(documents interface{}, filter ...interface{}) error {
 	return pkg.ParseInto(rmaps, documents)
 }
 
-func (d Database) InsertOne(document interface{}) (id int64, err error) {
+func (d Database) InsertOne(document any) (id any, err error) {
 	df, err := pkg.ToProtoAny(document)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	record, err := d.client.Create(d.ctx, &pb.CreateParams{
@@ -133,24 +154,23 @@ func (d Database) InsertOne(document interface{}) (id int64, err error) {
 		Record: df,
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	rmap, err := pkg.ProtoAnyToMap(record.Record)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	if err = pkg.ParseInto(rmap, document); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return rmap["id"].(int64), nil
+	return rmap["id"], nil
 }
 
-// TODO: Implement in a more efficient way
-func (d Database) InsertMany(documents []interface{}) ([]int64, error) {
-	var ids []int64
+func (d Database) InsertMany(documents []any) ([]any, error) {
+	var ids []any
 
 	for idx := range documents {
 		id, err := d.InsertOne(documents[idx])
@@ -163,7 +183,7 @@ func (d Database) InsertMany(documents []interface{}) ([]int64, error) {
 	return ids, nil
 }
 
-func (d Database) UpdateOne(document interface{}) error {
+func (d Database) UpdateOne(document any) error {
 	if err := dberr.CheckIDNonEmpty(d.id); err != nil {
 		return err
 	}
@@ -175,7 +195,7 @@ func (d Database) UpdateOne(document interface{}) error {
 
 	record, err := d.client.Update(d.ctx, &pb.UpdateParams{
 		Table:  d.table,
-		Id:     d.id,
+		Id:     d.id.(string),
 		Record: df,
 	})
 	if err != nil {
@@ -185,7 +205,7 @@ func (d Database) UpdateOne(document interface{}) error {
 	return pkg.ParseProtoAnyInto(record.Record, document)
 }
 
-func (d Database) DeleteOne(filter ...interface{}) error {
+func (d Database) DeleteOne(filter ...any) error {
 	if err := dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {
 		return err
 	}
@@ -205,22 +225,23 @@ func (d Database) DeleteOne(filter ...interface{}) error {
 
 	_, err := d.client.Delete(d.ctx, &pb.IdParams{
 		Table: d.table,
-		Id:    d.id,
+		Id:    d.id.(string),
 	})
 	return err
 }
 
-func (d Database) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	//TODO implement me
+func (d Database) Query(query string, args ...any) (*sql.Rows, error) {
 	panic("implement me")
 }
 
-func (d Database) Exec(query string, args ...interface{}) (sql.Result, error) {
-	//TODO implement me
+func (d Database) Exec(query string, args ...any) (sql.Result, error) {
 	panic("implement me")
 }
 
 func (d Database) Sync(...any) error {
-	//TODO implement me
-	panic("implement me")
+	return dberr.ErrTransactionNotStarted
+}
+
+func (d Database) Close() error {
+	return nil
 }

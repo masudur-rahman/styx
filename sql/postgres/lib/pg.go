@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/masudur-rahman/styx/dberr"
 	"github.com/masudur-rahman/styx/pkg"
 	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
@@ -47,13 +48,10 @@ func GetPostgresConnection(cfg PostgresConfig) (*sql.Conn, error) {
 	return conn, nil
 }
 
+// IsZeroValue checks if a value is its type's zero value.
+// Deprecated: Use dberr.IsZeroValue instead.
 func IsZeroValue(value any) bool {
-	if value == nil {
-		return true
-	}
-	typ := reflect.TypeOf(value)
-	zero := reflect.Zero(typ).Interface()
-	return reflect.DeepEqual(value, zero)
+	return dberr.IsZeroValue(value)
 }
 
 func toDBFieldName(fieldName string) string {
