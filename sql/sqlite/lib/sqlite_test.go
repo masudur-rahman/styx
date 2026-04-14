@@ -86,16 +86,16 @@ func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroInt(t *testing.
 	assert.NotContains(t, clause, "category_id")
 }
 
-type noskipTestDoc struct {
+type reqTestDoc struct {
 	UserID     int64  `db:"user_id"`
-	CategoryID string `db:"category_id,uqs noskip"`
-	AlertAt    int64  `db:"alert_at,noskip"`
+	CategoryID string `db:"category_id,uqs req"`
+	AlertAt    int64  `db:"alert_at,req"`
 	Score      int    `db:"score"`
 }
 
-func TestGenerateWhereClauseFromFilter_noskipTagIncludesZeroValues(t *testing.T) {
+func TestGenerateWhereClauseFromFilter_reqTagIncludesZeroValues(t *testing.T) {
 	stmt := Statement{}
-	filter := noskipTestDoc{UserID: 99}
+	filter := reqTestDoc{UserID: 99}
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
 
@@ -105,9 +105,9 @@ func TestGenerateWhereClauseFromFilter_noskipTagIncludesZeroValues(t *testing.T)
 	assert.NotContains(t, clause, "score")
 }
 
-func TestGenerateInsertQuery_noskipTagIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("noskip_doc")
-	doc := noskipTestDoc{UserID: 1}
+func TestGenerateInsertQuery_reqTagIncludesZeroValues(t *testing.T) {
+	stmt := Statement{}.Table("req_doc")
+	doc := reqTestDoc{UserID: 1}
 
 	query := stmt.GenerateInsertQuery(doc)
 
@@ -117,9 +117,9 @@ func TestGenerateInsertQuery_noskipTagIncludesZeroValues(t *testing.T) {
 	assert.NotContains(t, query, "score")
 }
 
-func TestGenerateUpdateQuery_noskipTagIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("noskip_doc").Where("user_id = ?", 1)
-	doc := noskipTestDoc{UserID: 1}
+func TestGenerateUpdateQuery_reqTagIncludesZeroValues(t *testing.T) {
+	stmt := Statement{}.Table("req_doc").Where("user_id = ?", 1)
+	doc := reqTestDoc{UserID: 1}
 
 	query := stmt.GenerateUpdateQuery(doc)
 
@@ -128,7 +128,7 @@ func TestGenerateUpdateQuery_noskipTagIncludesZeroValues(t *testing.T) {
 	assert.NotContains(t, query, "score")
 }
 
-func TestGenerateWhereClauseFromFilter_noNoskipTag_skipsZero(t *testing.T) {
+func TestGenerateWhereClauseFromFilter_noReqTag_skipsZero(t *testing.T) {
 	stmt := Statement{}
 	filter := whereTestDoc{UserID: 99}
 

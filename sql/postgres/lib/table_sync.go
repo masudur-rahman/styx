@@ -133,7 +133,7 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 					isComposite = true
 				case "AUTOINCR":
 					autoincr = true
-				case "NOSKIP":
+				case "REQ":
 					// handled at query generation time, no DDL effect
 				}
 			}
@@ -143,8 +143,8 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 	return strings.Join(constraints, " "), autoincr, isComposite
 }
 
-// hasNoskipTag checks if a struct field has the "noskip" option in its db tag.
-func hasNoskipTag(field reflect.StructField) bool {
+// hasReqTag checks if a struct field has the "req" option in its db tag.
+func hasReqTag(field reflect.StructField) bool {
 	dbTag := field.Tag.Get("db")
 	if dbTag == "" {
 		return false
@@ -154,7 +154,7 @@ func hasNoskipTag(field reflect.StructField) bool {
 		return false
 	}
 	for _, part := range strings.Fields(parts[1]) {
-		if strings.ToUpper(part) == "NOSKIP" {
+		if strings.ToUpper(part) == "REQ" {
 			return true
 		}
 	}
