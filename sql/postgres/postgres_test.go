@@ -36,22 +36,23 @@ func initializeDB(t *testing.T) (sql.Engine, func() error) {
 	conn, err := lib.GetPostgresConnection(cfg)
 	require.Nil(t, err)
 
-	return postgres.NewPostgres(context.Background(), conn).ShowSQL(true), conn.Close
+	return postgres.NewPostgres(conn).ShowSQL(true), conn.Close
 }
 
 func TestPostgres_Sync(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
 
-	err := db.Sync(TestUser{})
+	err := db.Sync(context.Background(), TestUser{})
 	assert.Nil(t, err)
 }
 
 func TestPostgres_FindOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	db, err := db.BeginTx()
+	db, err := db.BeginTx(ctx)
 	assert.Nil(t, err)
 	defer func() {
 		err = db.Commit()
@@ -62,19 +63,20 @@ func TestPostgres_FindOne(t *testing.T) {
 	//db = db.Table("test_user")
 
 	t.Run("find user by id", func(t *testing.T) {
-		has, err := db.ID(1).FindOne(&user)
+		has, err := db.ID(1).FindOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.True(t, has)
 	})
 
 	t.Run("find user by filter", func(t *testing.T) {
-		has, err := db.Where("email=?", "test@test.test").FindOne(&user, TestUser{Name: "test"})
+		has, err := db.Where("email=?", "test@test.test").FindOne(ctx, &user, TestUser{Name: "test"})
 		assert.Nil(t, err)
 		assert.False(t, has)
 	})
 }
 
 func TestPostgres_FindMany(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
@@ -82,26 +84,27 @@ func TestPostgres_FindMany(t *testing.T) {
 	//db = db.Table("test_user")
 
 	t.Run("find all", func(t *testing.T) {
-		err := db.FindMany(&users)
+		err := db.FindMany(ctx, &users)
 		assert.Nil(t, err)
 	})
 
 	t.Run("find by filter", func(t *testing.T) {
-		err := db.FindMany(&users, TestUser{Email: "masudjuly02@gmail.com"})
+		err := db.FindMany(ctx, &users, TestUser{Email: "masudjuly02@gmail.com"})
 		assert.Nil(t, err)
 	})
 
 	t.Run("find by where", func(t *testing.T) {
-		err := db.Where("name like 'masud%'").FindMany(&users)
+		err := db.Where("name like 'masud%'").FindMany(ctx, &users)
 		assert.Nil(t, err)
 	})
 }
 
 func TestPostgres_InsertOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	db, err := db.BeginTx()
+	db, err := db.BeginTx(ctx)
 	assert.Nil(t, err)
 
 	db = db.Table("test_user")
@@ -113,7 +116,7 @@ func TestPostgres_InsertOne(t *testing.T) {
 			FullName: "Test Name",
 			Email:    fmt.Sprintf("test%v@test.test", suffix),
 		}
-		id, err := db.InsertOne(&user)
+		id, err := db.InsertOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.NotEqual(t, 0, id)
 		if err != nil {
@@ -127,6 +130,7 @@ func TestPostgres_InsertOne(t *testing.T) {
 }
 
 func TestPostgres_UpdateOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
@@ -135,22 +139,23 @@ func TestPostgres_UpdateOne(t *testing.T) {
 		user := TestUser{
 			FullName: "Test Name 2",
 		}
-		err := db.Where("name='test'").UpdateOne(user)
+		err := db.Where("name='test'").UpdateOne(ctx, user)
 		assert.Nil(t, err)
 	})
 }
 
 func TestPostgres_DeleteOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
 	db = db.Table("test_user")
 	t.Run("delete data", func(t *testing.T) {
-		err := db.ID(8).DeleteOne()
+		err := db.ID(8).DeleteOne(ctx)
 		assert.Nil(t, err)
 	})
 	t.Run("delete data from filter", func(t *testing.T) {
-		err := db.DeleteOne(TestUser{ID: 7})
+		err := db.DeleteOne(ctx, TestUser{ID: 7})
 		assert.Nil(t, err)
 	})
 }

@@ -1,11 +1,12 @@
 package sql
 
 import (
+	"context"
 	"database/sql"
 )
 
 type Engine interface {
-	BeginTx() (Engine, error)
+	BeginTx(ctx context.Context) (Engine, error)
 	Commit() error
 	Rollback() error
 
@@ -20,21 +21,20 @@ type Engine interface {
 	MustFilterCols(cols ...string) Engine
 	ShowSQL(showSQL bool) Engine
 
-	FindOne(document any, filter ...any) (bool, error)
-	FindMany(documents any, filter ...any) error
+	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
+	FindMany(ctx context.Context, documents any, filter ...any) error
 
-	InsertOne(document any) (id any, err error)
-	// TODO: might need to convert []any to just any
-	InsertMany(documents []any) ([]any, error)
+	InsertOne(ctx context.Context, document any) (id any, err error)
+	InsertMany(ctx context.Context, documents []any) ([]any, error)
 
-	UpdateOne(document any) error
+	UpdateOne(ctx context.Context, document any) error
 
-	DeleteOne(filter ...any) error
+	DeleteOne(ctx context.Context, filter ...any) error
 
-	Query(query string, args ...any) (*sql.Rows, error)
-	Exec(query string, args ...any) (sql.Result, error)
+	Query(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	Exec(ctx context.Context, query string, args ...any) (sql.Result, error)
 
-	Sync(tables ...any) error
+	Sync(ctx context.Context, tables ...any) error
 
 	Close() error
 }

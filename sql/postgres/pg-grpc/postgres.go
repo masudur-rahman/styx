@@ -14,20 +14,18 @@ import (
 )
 
 type Database struct {
-	ctx    context.Context
 	table  string
 	id     any
 	client pb.PostgresClient
 }
 
-func NewDatabase(ctx context.Context, client pb.PostgresClient) Database {
+func NewDatabase(client pb.PostgresClient) Database {
 	return Database{
-		ctx:    ctx,
 		client: client,
 	}
 }
 
-func (d Database) BeginTx() (isql.Engine, error) {
+func (d Database) BeginTx(ctx context.Context) (isql.Engine, error) {
 	return nil, dberr.ErrTransactionNotStarted
 }
 
@@ -77,7 +75,7 @@ func (d Database) ShowSQL(showSQL bool) isql.Engine {
 	panic("implement me")
 }
 
-func (d Database) FindOne(document any, filter ...any) (bool, error) {
+func (d Database) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	var err error
 	if err = dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {
 		return false, err
@@ -87,7 +85,7 @@ func (d Database) FindOne(document any, filter ...any) (bool, error) {
 
 	if filter == nil {
 		idStr, _ := d.id.(string)
-		record, err = d.client.GetById(d.ctx, &pb.IdParams{
+		record, err = d.client.GetById(ctx, &pb.IdParams{
 			Table: d.table,
 			Id:    idStr,
 		})
@@ -98,7 +96,7 @@ func (d Database) FindOne(document any, filter ...any) (bool, error) {
 			return false, err
 		}
 
-		record, err = d.client.Get(d.ctx, &pb.FilterParams{
+		record, err = d.client.Get(ctx, &pb.FilterParams{
 			Table:  d.table,
 			Filter: af,
 		})
@@ -117,13 +115,13 @@ func (d Database) FindOne(document any, filter ...any) (bool, error) {
 	return true, nil
 }
 
-func (d Database) FindMany(documents any, filter ...any) error {
+func (d Database) FindMany(ctx context.Context, documents any, filter ...any) error {
 	af, err := pkg.ToProtoAny(filter)
 	if err != nil {
 		return err
 	}
 
-	records, err := d.client.Find(d.ctx, &pb.FilterParams{
+	records, err := d.client.Find(ctx, &pb.FilterParams{
 		Table:  d.table,
 		Filter: af,
 	})
@@ -143,13 +141,13 @@ func (d Database) FindMany(documents any, filter ...any) error {
 	return pkg.ParseInto(rmaps, documents)
 }
 
-func (d Database) InsertOne(document any) (id any, err error) {
+func (d Database) InsertOne(ctx context.Context, document any) (id any, err error) {
 	df, err := pkg.ToProtoAny(document)
 	if err != nil {
 		return nil, err
 	}
 
-	record, err := d.client.Create(d.ctx, &pb.CreateParams{
+	record, err := d.client.Create(ctx, &pb.CreateParams{
 		Table:  d.table,
 		Record: df,
 	})
@@ -169,11 +167,11 @@ func (d Database) InsertOne(document any) (id any, err error) {
 	return rmap["id"], nil
 }
 
-func (d Database) InsertMany(documents []any) ([]any, error) {
+func (d Database) InsertMany(ctx context.Context, documents []any) ([]any, error) {
 	var ids []any
 
 	for idx := range documents {
-		id, err := d.InsertOne(documents[idx])
+		id, err := d.InsertOne(ctx, documents[idx])
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +181,7 @@ func (d Database) InsertMany(documents []any) ([]any, error) {
 	return ids, nil
 }
 
-func (d Database) UpdateOne(document any) error {
+func (d Database) UpdateOne(ctx context.Context, document any) error {
 	if err := dberr.CheckIDNonEmpty(d.id); err != nil {
 		return err
 	}
@@ -193,7 +191,7 @@ func (d Database) UpdateOne(document any) error {
 		return err
 	}
 
-	record, err := d.client.Update(d.ctx, &pb.UpdateParams{
+	record, err := d.client.Update(ctx, &pb.UpdateParams{
 		Table:  d.table,
 		Id:     d.id.(string),
 		Record: df,
@@ -205,7 +203,7 @@ func (d Database) UpdateOne(document any) error {
 	return pkg.ParseProtoAnyInto(record.Record, document)
 }
 
-func (d Database) DeleteOne(filter ...any) error {
+func (d Database) DeleteOne(ctx context.Context, filter ...any) error {
 	if err := dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {
 		return err
 	}
@@ -214,7 +212,7 @@ func (d Database) DeleteOne(filter ...any) error {
 		doc := struct {
 			ID string `json:"id"`
 		}{}
-		found, err := d.FindOne(&doc, filter)
+		found, err := d.FindOne(ctx, &doc, filter)
 		if err != nil {
 			return err
 		} else if !found {
@@ -223,22 +221,22 @@ func (d Database) DeleteOne(filter ...any) error {
 		d.id = doc.ID
 	}
 
-	_, err := d.client.Delete(d.ctx, &pb.IdParams{
+	_, err := d.client.Delete(ctx, &pb.IdParams{
 		Table: d.table,
 		Id:    d.id.(string),
 	})
 	return err
 }
 
-func (d Database) Query(query string, args ...any) (*sql.Rows, error) {
+func (d Database) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	panic("implement me")
 }
 
-func (d Database) Exec(query string, args ...any) (sql.Result, error) {
+func (d Database) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	panic("implement me")
 }
 
-func (d Database) Sync(...any) error {
+func (d Database) Sync(ctx context.Context, tables ...any) error {
 	return dberr.ErrTransactionNotStarted
 }
 

@@ -11,20 +11,18 @@ import (
 )
 
 type Supabase struct {
-	ctx    context.Context
 	table  string
 	id     any
 	client *supabase.Client
 }
 
-func NewSupabase(ctx context.Context, client *supabase.Client) Supabase {
+func NewSupabase(client *supabase.Client) Supabase {
 	return Supabase{
-		ctx:    ctx,
 		client: client,
 	}
 }
 
-func (s Supabase) BeginTx() (isql.Engine, error) {
+func (s Supabase) BeginTx(ctx context.Context) (isql.Engine, error) {
 	return nil, dberr.ErrTransactionNotStarted
 }
 
@@ -81,7 +79,7 @@ func (s Supabase) ShowSQL(showSQL bool) isql.Engine {
 	panic("implement me")
 }
 
-func (s Supabase) FindOne(document any, filter ...any) (bool, error) {
+func (s Supabase) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	if err := dberr.CheckIdOrFilterNonEmpty(s.id, filter); err != nil {
 		return false, err
 	}
@@ -104,7 +102,7 @@ func (s Supabase) FindOne(document any, filter ...any) (bool, error) {
 	return true, nil
 }
 
-func (s Supabase) FindMany(documents any, filter ...any) error {
+func (s Supabase) FindMany(ctx context.Context, documents any, filter ...any) error {
 	kvs := generateFilters(filter)
 	cl := s.client.DB.From(s.table).Select("*")
 
@@ -118,7 +116,7 @@ func (s Supabase) FindMany(documents any, filter ...any) error {
 	return nil
 }
 
-func (s Supabase) InsertOne(document any) (id any, err error) {
+func (s Supabase) InsertOne(ctx context.Context, document any) (id any, err error) {
 	docs := []Doc{}
 	err = s.client.DB.From(s.table).Insert(document).Execute(&docs)
 	if err != nil {
@@ -127,10 +125,10 @@ func (s Supabase) InsertOne(document any) (id any, err error) {
 	return docs[0].ID.(int64), nil
 }
 
-func (s Supabase) InsertMany(documents []any) ([]any, error) {
+func (s Supabase) InsertMany(ctx context.Context, documents []any) ([]any, error) {
 	var ids = make([]any, 0, len(documents))
 	for idx := range documents {
-		id, err := s.InsertOne(documents[idx])
+		id, err := s.InsertOne(ctx, documents[idx])
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +138,7 @@ func (s Supabase) InsertMany(documents []any) ([]any, error) {
 	return ids, nil
 }
 
-func (s Supabase) UpdateOne(document any) error {
+func (s Supabase) UpdateOne(ctx context.Context, document any) error {
 	if err := dberr.CheckIDNonEmpty(s.id); err != nil {
 		return err
 	}
@@ -148,7 +146,7 @@ func (s Supabase) UpdateOne(document any) error {
 	return s.client.DB.From(s.table).Update(document).Eq("id", toString(s.id)).Execute(&document)
 }
 
-func (s Supabase) DeleteOne(filter ...any) error {
+func (s Supabase) DeleteOne(ctx context.Context, filter ...any) error {
 	if err := dberr.CheckIdOrFilterNonEmpty(s.id, filter); err != nil {
 		return err
 	}
@@ -169,15 +167,15 @@ func (s Supabase) DeleteOne(filter ...any) error {
 	return cl.Execute(&rs)
 }
 
-func (s Supabase) Query(query string, args ...any) (*sql.Rows, error) {
+func (s Supabase) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	panic("implement me")
 }
 
-func (s Supabase) Exec(query string, args ...any) (sql.Result, error) {
+func (s Supabase) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	panic("implement me")
 }
 
-func (s Supabase) Sync(a ...any) error {
+func (s Supabase) Sync(ctx context.Context, tables ...any) error {
 	//TODO implement me
 	panic("implement me")
 }

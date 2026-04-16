@@ -15,23 +15,22 @@ import (
 )
 
 type SQLite struct {
-	ctx       context.Context
 	conn      *sql.Conn
 	tx        *sql.Tx
 	statement lib.Statement
 }
 
-func NewSQLite(ctx context.Context, conn *sql.Conn) SQLite {
-	return SQLite{ctx: ctx, conn: conn}
+func NewSQLite(conn *sql.Conn) SQLite {
+	return SQLite{conn: conn}
 }
 
 var _ isql.Engine = SQLite{}
 
-func (sq SQLite) BeginTx() (isql.Engine, error) {
+func (sq SQLite) BeginTx(ctx context.Context) (isql.Engine, error) {
 	if sq.tx != nil {
 		return nil, dberr.ErrTransactionAlreadyStarted
 	}
-	tx, err := sq.conn.BeginTx(sq.ctx, nil)
+	tx, err := sq.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +101,7 @@ func (sq SQLite) ShowSQL(showSQL bool) isql.Engine {
 	return sq
 }
 
-func (sq SQLite) FindOne(document any, filter ...any) (bool, error) {
+func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	sq.statement = sq.statement.GenerateWhereClause(filter...)
 
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -110,7 +109,7 @@ func (sq SQLite) FindOne(document any, filter ...any) (bool, error) {
 	}
 
 	query := sq.statement.GenerateReadQuery(document)
-	err := sq.statement.ExecuteReadQuery(sq.ctx, sq.conn, sq.tx, query, document)
+	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document)
 	if err == nil {
 		return true, nil
 	}
@@ -121,31 +120,31 @@ func (sq SQLite) FindOne(document any, filter ...any) (bool, error) {
 	return false, err
 }
 
-func (sq SQLite) FindMany(documents any, filter ...any) error {
+func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) error {
 	sq.statement = sq.statement.GenerateWhereClause(filter...)
 
 	query := sq.statement.GenerateReadQuery(documents)
-	return sq.statement.ExecuteReadQuery(sq.ctx, sq.conn, sq.tx, query, documents)
+	return sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents)
 }
 
-func (sq SQLite) InsertOne(document any) (id any, err error) {
+func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
 	pkCol := lib.ExtractPKColumn(document)
 	sq.statement = sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
-	id, err = sq.statement.ExecuteInsertQuery(sq.ctx, sq.conn, sq.tx, query)
+	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
 	if err != nil {
 		return nil, err
 	}
 	return assignID(document, id)
 }
 
-func (sq SQLite) InsertMany(documents []any) ([]any, error) {
+func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error) {
 	var ids []any
 	for _, doc := range documents {
 		pkCol := lib.ExtractPKColumn(doc)
 		sq.statement = sq.statement.PKColumn(pkCol)
 		query := sq.statement.GenerateInsertQuery(doc)
-		id, err := sq.statement.ExecuteInsertQuery(sq.ctx, sq.conn, sq.tx, query)
+		id, err := sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
 		if err != nil {
 			return nil, err
 		}
@@ -229,14 +228,14 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 	return
 }
 
-func (sq SQLite) UpdateOne(document any) error {
+func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 	sq.statement = sq.statement.GenerateWhereClause()
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
 	query := sq.statement.GenerateUpdateQuery(document)
-	result, err := sq.statement.ExecuteWriteQuery(sq.ctx, sq.conn, sq.tx, query)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
 	if err != nil {
 		return err
 	}
@@ -250,14 +249,14 @@ func (sq SQLite) UpdateOne(document any) error {
 	return nil
 }
 
-func (sq SQLite) DeleteOne(filter ...any) error {
+func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	sq.statement = sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
 	query := sq.statement.GenerateDeleteQuery()
-	result, err := sq.statement.ExecuteWriteQuery(sq.ctx, sq.conn, sq.tx, query)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
 	if err != nil {
 		return err
 	}
@@ -271,16 +270,15 @@ func (sq SQLite) DeleteOne(filter ...any) error {
 	return nil
 }
 
-func (sq SQLite) Query(query string, args ...any) (*sql.Rows, error) {
-	return sq.conn.QueryContext(sq.ctx, query, args...)
+func (sq SQLite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return sq.conn.QueryContext(ctx, query, args...)
 }
 
-func (sq SQLite) Exec(query string, args ...any) (sql.Result, error) {
-	return sq.conn.ExecContext(sq.ctx, query, args...)
+func (sq SQLite) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return sq.conn.ExecContext(ctx, query, args...)
 }
 
-func (sq SQLite) Sync(tables ...any) error {
-	ctx := context.Background()
+func (sq SQLite) Sync(ctx context.Context, tables ...any) error {
 	for _, table := range tables {
 		if err := lib.SyncTable(ctx, sq.conn, table); err != nil {
 			return err

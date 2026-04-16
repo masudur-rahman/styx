@@ -11,16 +11,14 @@ import (
 )
 
 type ArangoDB struct {
-	ctx            context.Context
 	db             arango.Database
 	id             string
 	collectionName string
 }
 
-func NewArangoDB(ctx context.Context, db arango.Database) ArangoDB {
+func NewArangoDB(db arango.Database) ArangoDB {
 	return ArangoDB{
-		db:  db,
-		ctx: ctx,
+		db: db,
 	}
 }
 
@@ -34,18 +32,18 @@ func (a ArangoDB) ID(id string) nosql.Engine {
 	return a
 }
 
-func (a ArangoDB) FindOne(document interface{}, filter ...interface{}) (bool, error) {
+func (a ArangoDB) FindOne(ctx context.Context, document interface{}, filter ...interface{}) (bool, error) {
 	if err := dberr.CheckIdOrFilterNonEmpty(a.id, filter); err != nil {
 		return false, err
 	}
 
-	collection, err := getDBCollection(a.ctx, a.db, a.collectionName)
+	collection, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return false, err
 	}
 
 	if filter == nil {
-		meta, err := collection.ReadDocument(a.ctx, a.id, document)
+		meta, err := collection.ReadDocument(ctx, a.id, document)
 		if arango.IsNotFoundGeneral(err) {
 			return false, nil
 		}
@@ -53,7 +51,7 @@ func (a ArangoDB) FindOne(document interface{}, filter ...interface{}) (bool, er
 	}
 
 	query := generateArangoQuery(a.collectionName, filter[0], false)
-	results, err := executeArangoQuery(a.ctx, a.db, query, 1)
+	results, err := executeArangoQuery(ctx, a.db, query, 1)
 	if arango.IsNotFoundGeneral(err) {
 		return false, nil
 	} else if err != nil {
@@ -71,14 +69,14 @@ func (a ArangoDB) FindOne(document interface{}, filter ...interface{}) (bool, er
 	return true, nil
 }
 
-func (a ArangoDB) FindMany(documents interface{}, filter interface{}) error {
-	_, err := getDBCollection(a.ctx, a.db, a.collectionName)
+func (a ArangoDB) FindMany(ctx context.Context, documents interface{}, filter interface{}) error {
+	_, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return err
 	}
 
 	query := generateArangoQuery(a.collectionName, filter, false)
-	results, err := executeArangoQuery(a.ctx, a.db, query, -1)
+	results, err := executeArangoQuery(ctx, a.db, query, -1)
 	if err != nil {
 		return err
 	}
@@ -86,13 +84,13 @@ func (a ArangoDB) FindMany(documents interface{}, filter interface{}) error {
 	return pkg.ParseInto(results, documents)
 }
 
-func (a ArangoDB) InsertOne(document interface{}) (id string, err error) {
-	collection, err := getDBCollection(a.ctx, a.db, a.collectionName)
+func (a ArangoDB) InsertOne(ctx context.Context, document interface{}) (id string, err error) {
+	collection, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return "", err
 	}
 
-	meta, err := collection.CreateDocument(a.ctx, document)
+	meta, err := collection.CreateDocument(ctx, document)
 	if err != nil {
 		return "", err
 	}
@@ -100,13 +98,13 @@ func (a ArangoDB) InsertOne(document interface{}) (id string, err error) {
 	return meta.Key, nil
 }
 
-func (a ArangoDB) InsertMany(documents []interface{}) ([]string, error) {
-	collection, err := getDBCollection(a.ctx, a.db, a.collectionName)
+func (a ArangoDB) InsertMany(ctx context.Context, documents []interface{}) ([]string, error) {
+	collection, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return nil, err
 	}
 
-	metas, _, err := collection.CreateDocuments(a.ctx, documents)
+	metas, _, err := collection.CreateDocuments(ctx, documents)
 	if err != nil {
 		return nil, err
 	}
@@ -120,37 +118,37 @@ func (a ArangoDB) InsertMany(documents []interface{}) ([]string, error) {
 	return ids, nil
 }
 
-func (a ArangoDB) UpdateOne(document interface{}) error {
+func (a ArangoDB) UpdateOne(ctx context.Context, document interface{}) error {
 	if err := dberr.CheckIDNonEmpty(a.id); err != nil {
 		return err
 	}
 
-	collection, err := getDBCollection(a.ctx, a.db, a.collectionName)
+	collection, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return err
 	}
 
-	_, err = collection.UpdateDocument(a.ctx, a.id, document)
+	_, err = collection.UpdateDocument(ctx, a.id, document)
 	return err
 }
 
-func (a ArangoDB) DeleteOne(filter ...interface{}) error {
+func (a ArangoDB) DeleteOne(ctx context.Context, filter ...interface{}) error {
 	if err := dberr.CheckIdOrFilterNonEmpty(a.id, filter); err != nil {
 		return err
 	}
 
-	collection, err := getDBCollection(a.ctx, a.db, a.collectionName)
+	collection, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return err
 	}
 
 	if filter == nil {
-		_, err = collection.RemoveDocument(a.ctx, a.id)
+		_, err = collection.RemoveDocument(ctx, a.id)
 		return err
 	}
 
 	query := generateArangoQuery(a.collectionName, filter[0], true)
-	_, err = executeArangoQuery(a.ctx, a.db, query, 1)
+	_, err = executeArangoQuery(ctx, a.db, query, 1)
 	if err != nil {
 		return err
 	}
@@ -158,11 +156,11 @@ func (a ArangoDB) DeleteOne(filter ...interface{}) error {
 	return nil
 }
 
-func (a ArangoDB) Query(query string, bindParams map[string]interface{}) (interface{}, error) {
-	_, err := getDBCollection(a.ctx, a.db, a.collectionName)
+func (a ArangoDB) Query(ctx context.Context, query string, bindParams map[string]interface{}) (interface{}, error) {
+	_, err := getDBCollection(ctx, a.db, a.collectionName)
 	if err != nil {
 		return nil, err
 	}
 
-	return executeArangoQuery(a.ctx, a.db, &Query{queryString: query, bindVars: bindParams}, -1)
+	return executeArangoQuery(ctx, a.db, &Query{queryString: query, bindVars: bindParams}, -1)
 }

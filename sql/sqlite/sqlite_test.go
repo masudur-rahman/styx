@@ -26,21 +26,22 @@ func initializeDB(t *testing.T) (sql.Engine, func() error) {
 	conn, err := lib.GetSQLiteConnection("test.db")
 	require.Nil(t, err)
 
-	return NewSQLite(context.Background(), conn), conn.Close
+	return NewSQLite(conn), conn.Close
 }
 
 func TestPostgres_Sync(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
-	err := db.Sync(User{})
+	err := db.Sync(context.Background(), User{})
 	assert.Nil(t, err)
 }
 
 func TestPostgres_FindOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	db, err := db.BeginTx()
+	db, err := db.BeginTx(ctx)
 	assert.Nil(t, err)
 	defer func() {
 		err = db.Commit()
@@ -51,19 +52,20 @@ func TestPostgres_FindOne(t *testing.T) {
 	db = db.Table("user")
 
 	t.Run("find user by id", func(t *testing.T) {
-		has, err := db.ID(1).FindOne(&user)
+		has, err := db.ID(1).FindOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.True(t, has)
 	})
 
 	t.Run("find user by filter", func(t *testing.T) {
-		has, err := db.Where("email LIKE ?", "%@test.test").FindOne(&user, User{})
+		has, err := db.Where("email LIKE ?", "%@test.test").FindOne(ctx, &user, User{})
 		assert.Nil(t, err)
 		assert.True(t, has)
 	})
 }
 
 func TestPostgres_FindMany(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
@@ -71,26 +73,27 @@ func TestPostgres_FindMany(t *testing.T) {
 	//db = db.Table("user")
 
 	t.Run("find all", func(t *testing.T) {
-		err := db.FindMany(&users)
+		err := db.FindMany(ctx, &users)
 		assert.Nil(t, err)
 	})
 
 	t.Run("find by filter", func(t *testing.T) {
-		err := db.FindMany(&users, User{Email: "masudjuly02@gmail.com"})
+		err := db.FindMany(ctx, &users, User{Email: "masudjuly02@gmail.com"})
 		assert.Nil(t, err)
 	})
 
 	t.Run("find by where", func(t *testing.T) {
-		err := db.Where("name like 'masud%'").FindMany(&users)
+		err := db.Where("name like 'masud%'").FindMany(ctx, &users)
 		assert.Nil(t, err)
 	})
 }
 
 func TestPostgres_InsertOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	db, err := db.BeginTx()
+	db, err := db.BeginTx(ctx)
 	assert.Nil(t, err)
 
 	db = db.Table("user")
@@ -101,7 +104,7 @@ func TestPostgres_InsertOne(t *testing.T) {
 			FullName: "Test Name",
 			Email:    fmt.Sprintf("test-%v@test.test", suffix),
 		}
-		id, err := db.InsertOne(&user)
+		id, err := db.InsertOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.NotEqual(t, 0, id)
 		if err != nil {
@@ -115,6 +118,7 @@ func TestPostgres_InsertOne(t *testing.T) {
 }
 
 func TestPostgres_UpdateOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
@@ -123,44 +127,47 @@ func TestPostgres_UpdateOne(t *testing.T) {
 		user := User{
 			FullName: "Test Name 2",
 		}
-		err := db.ID(1).UpdateOne(user)
+		err := db.ID(1).UpdateOne(ctx, user)
 		assert.Nil(t, err)
 	})
 }
 
 func TestPostgres_DeleteOne(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
 	db = db.Table("user")
 	t.Run("delete data", func(t *testing.T) {
-		err := db.ID(4).DeleteOne()
+		err := db.ID(4).DeleteOne(ctx)
 		assert.Nil(t, err)
 	})
 	t.Run("delete data from filter", func(t *testing.T) {
-		err := db.DeleteOne(User{ID: 3})
+		err := db.DeleteOne(ctx, User{ID: 3})
 		assert.Nil(t, err)
 	})
 }
 
 func TestUpdateOne_nonExistentRow(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	err := db.Sync(User{})
+	err := db.Sync(ctx, User{})
 	require.Nil(t, err)
 
-	err = db.Table("user").ID(999999).UpdateOne(User{FullName: "ghost"})
+	err = db.Table("user").ID(999999).UpdateOne(ctx, User{FullName: "ghost"})
 	assert.ErrorIs(t, err, dberr.DataNotFound)
 }
 
 func TestDeleteOne_nonExistentRow(t *testing.T) {
+	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	err := db.Sync(User{})
+	err := db.Sync(ctx, User{})
 	require.Nil(t, err)
 
-	err = db.Table("user").ID(999999).DeleteOne()
+	err = db.Table("user").ID(999999).DeleteOne(ctx)
 	assert.ErrorIs(t, err, dberr.DataNotFound)
 }

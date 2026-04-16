@@ -13,23 +13,22 @@ import (
 )
 
 type Postgres struct {
-	ctx       context.Context
 	conn      *sql.Conn
 	tx        *sql.Tx
 	statement lib.Statement
 }
 
-func NewPostgres(ctx context.Context, conn *sql.Conn) Postgres {
-	return Postgres{ctx: ctx, conn: conn}
+func NewPostgres(conn *sql.Conn) Postgres {
+	return Postgres{conn: conn}
 }
 
 var _ isql.Engine = Postgres{}
 
-func (pg Postgres) BeginTx() (isql.Engine, error) {
+func (pg Postgres) BeginTx(ctx context.Context) (isql.Engine, error) {
 	if pg.tx != nil {
 		return nil, dberr.ErrTransactionAlreadyStarted
 	}
-	tx, err := pg.conn.BeginTx(pg.ctx, nil)
+	tx, err := pg.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +99,7 @@ func (pg Postgres) ShowSQL(showSQL bool) isql.Engine {
 	return pg
 }
 
-func (pg Postgres) FindOne(document any, filter ...any) (bool, error) {
+func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	pg.statement = pg.statement.GenerateWhereClause(filter...)
 
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -108,7 +107,7 @@ func (pg Postgres) FindOne(document any, filter ...any) (bool, error) {
 	}
 
 	query := pg.statement.GenerateReadQuery(document)
-	err := pg.statement.ExecuteReadQuery(pg.ctx, pg.conn, pg.tx, query, document)
+	err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, document)
 	if err == nil {
 		return true, nil
 	}
@@ -119,31 +118,31 @@ func (pg Postgres) FindOne(document any, filter ...any) (bool, error) {
 	return false, err
 }
 
-func (pg Postgres) FindMany(documents any, filter ...any) error {
+func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) error {
 	pg.statement = pg.statement.GenerateWhereClause(filter...)
 
 	query := pg.statement.GenerateReadQuery(documents)
-	return pg.statement.ExecuteReadQuery(pg.ctx, pg.conn, pg.tx, query, documents)
+	return pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents)
 }
 
-func (pg Postgres) InsertOne(document any) (id any, err error) {
+func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {
 	pkCol := lib.ExtractPKColumn(document)
 	pg.statement = pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
-	id, err = pg.statement.ExecuteInsertQuery(pg.ctx, pg.conn, pg.tx, query)
+	id, err = pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
 	if err != nil {
 		return nil, err
 	}
 	return assignID(document, id)
 }
 
-func (pg Postgres) InsertMany(documents []any) ([]any, error) {
+func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, error) {
 	var ids []any
 	for _, doc := range documents {
 		pkCol := lib.ExtractPKColumn(doc)
 		pg.statement = pg.statement.PKColumn(pkCol)
 		query := pg.statement.GenerateInsertQuery(doc)
-		id, err := pg.statement.ExecuteInsertQuery(pg.ctx, pg.conn, pg.tx, query)
+		id, err := pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
 		if err != nil {
 			return nil, err
 		}
@@ -227,14 +226,14 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 	return
 }
 
-func (pg Postgres) UpdateOne(document any) error {
+func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 	pg.statement = pg.statement.GenerateWhereClause()
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
 	query := pg.statement.GenerateUpdateQuery(document)
-	result, err := pg.statement.ExecuteWriteQuery(pg.ctx, pg.conn, pg.tx, query)
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query)
 	if err != nil {
 		return err
 	}
@@ -248,14 +247,14 @@ func (pg Postgres) UpdateOne(document any) error {
 	return nil
 }
 
-func (pg Postgres) DeleteOne(filter ...any) error {
+func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 	pg.statement = pg.statement.GenerateWhereClause(filter...)
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
 	query := pg.statement.GenerateDeleteQuery()
-	result, err := pg.statement.ExecuteWriteQuery(pg.ctx, pg.conn, pg.tx, query)
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query)
 	if err != nil {
 		return err
 	}
@@ -269,16 +268,15 @@ func (pg Postgres) DeleteOne(filter ...any) error {
 	return nil
 }
 
-func (pg Postgres) Query(query string, args ...any) (*sql.Rows, error) {
-	return pg.conn.QueryContext(pg.ctx, query, args...)
+func (pg Postgres) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return pg.conn.QueryContext(ctx, query, args...)
 }
 
-func (pg Postgres) Exec(query string, args ...any) (sql.Result, error) {
-	return pg.conn.ExecContext(pg.ctx, query, args...)
+func (pg Postgres) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return pg.conn.ExecContext(ctx, query, args...)
 }
 
-func (pg Postgres) Sync(tables ...any) error {
-	ctx := context.Background()
+func (pg Postgres) Sync(ctx context.Context, tables ...any) error {
 	for _, table := range tables {
 		if err := lib.SyncTable(ctx, pg.conn, table); err != nil {
 			return err
