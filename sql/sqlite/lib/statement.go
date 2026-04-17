@@ -155,7 +155,7 @@ func (stmt Statement) GenerateReadQuery(doc any) string {
 	return query
 }
 
-func (stmt Statement) ExecuteReadQuery(ctx context.Context, conn *sql.Conn, tx *sql.Tx, query string, doc any) error {
+func (stmt Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any) error {
 	//defer  stmt.cleanup()
 
 	if stmt.showSQL {
@@ -235,7 +235,7 @@ func (stmt Statement) GenerateInsertQuery(doc any) string {
 	return query
 }
 
-func (stmt Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.Conn, tx *sql.Tx, query string) (any, error) {
+func (stmt Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -257,7 +257,7 @@ func (stmt Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.Conn, tx
 	return id, err
 }
 
-func (stmt Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.Conn, tx *sql.Tx, query string) (sql.Result, error) {
+func (stmt Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (sql.Result, error) {
 	if stmt.showSQL {
 		log.Printf("Write Query: query: %v, args: %v\n", query, stmt.args)
 	}

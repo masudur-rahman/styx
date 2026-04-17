@@ -68,13 +68,13 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 	return fields, nil
 }
 
-func createTable(ctx context.Context, conn *sql.Conn, tableName string, fields []fieldInfo) error {
+func createTable(ctx context.Context, conn *sql.DB, tableName string, fields []fieldInfo) error {
 	query := createTableQuery(tableName, fields)
 	_, err := ExecuteWriteQuery(ctx, query, conn)
 	return err
 }
 
-func addMissingColumns(ctx context.Context, conn *sql.Conn, tableName string, fields []fieldInfo) error {
+func addMissingColumns(ctx context.Context, conn *sql.DB, tableName string, fields []fieldInfo) error {
 	columns, err := getExistingColumns(ctx, conn, tableName)
 	if err != nil {
 		return err
@@ -252,7 +252,7 @@ func getSQLType(fieldType reflect.Type, autoincr bool) string {
 	return ""
 }
 
-func tableExists(ctx context.Context, conn *sql.Conn, tableName string) (bool, error) {
+func tableExists(ctx context.Context, conn *sql.DB, tableName string) (bool, error) {
 	tableQuery := "" +
 		"SELECT EXISTS (" +
 		"    SELECT FROM " +
@@ -301,7 +301,7 @@ func generateAddColumnQuery(tableName string, missingColumns []string) string {
 	return alterQuery
 }
 
-func getExistingColumns(ctx context.Context, conn *sql.Conn, tableName string) ([]string, error) {
+func getExistingColumns(ctx context.Context, conn *sql.DB, tableName string) ([]string, error) {
 	var columns []string
 
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf("SELECT column_name FROM information_schema.columns WHERE table_name='%s'", tableName))
@@ -338,7 +338,7 @@ func getMissingColumns(fields []fieldInfo, columns []string) []string {
 	return missingColumns
 }
 
-func getUniqueConstraints(ctx context.Context, conn *sql.Conn, tableName string) ([][]string, error) {
+func getUniqueConstraints(ctx context.Context, conn *sql.DB, tableName string) ([][]string, error) {
 	query := `
 	SELECT kcu.column_name
 	FROM information_schema.table_constraints tc
@@ -420,7 +420,7 @@ func contains(slice []string, val string) bool {
 	return false
 }
 
-func SyncTable(ctx context.Context, conn *sql.Conn, table any) error {
+func SyncTable(ctx context.Context, conn *sql.DB, table any) error {
 	tableName := GenerateTableName(table)
 	fields, err := getTableInfo(table)
 	if err != nil {

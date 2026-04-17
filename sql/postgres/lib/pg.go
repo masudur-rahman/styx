@@ -31,21 +31,18 @@ func (cp PostgresConfig) String() string {
 	return fmt.Sprintf("user=%v password=%v dbname=%v host=%v port=%v sslmode=%v", cp.User, cp.Password, cp.Name, cp.Host, cp.Port, cp.SSLMode)
 }
 
-func GetPostgresConnection(cfg PostgresConfig) (*sql.Conn, error) {
+// GetPostgresConnection opens a PostgreSQL database and returns a *sql.DB connection pool.
+func GetPostgresConnection(cfg PostgresConfig) (*sql.DB, error) {
 	db, err := sql.Open("postgres", cfg.String())
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := db.Conn(context.Background())
-	if err != nil {
+	if err = db.PingContext(context.Background()); err != nil {
 		return nil, err
 	}
 
-	if err = conn.PingContext(context.Background()); err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return db, nil
 }
 
 // IsZeroValue checks if a value is its type's zero value.
@@ -260,7 +257,7 @@ func scanSingleRecord(rows *sql.Rows) (map[string]any, error) {
 	return record, nil
 }
 
-func ExecuteReadQuery(ctx context.Context, query string, conn *sql.Conn, lim int64) ([]map[string]any, error) {
+func ExecuteReadQuery(ctx context.Context, query string, conn *sql.DB, lim int64) ([]map[string]any, error) {
 	log.Printf("Read Query: query=%v\n", query)
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
@@ -315,7 +312,7 @@ func GenerateInsertQuery(tableName string, record map[string]any) string {
 	return query
 }
 
-func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.Conn) (sql.Result, error) {
+func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.DB) (sql.Result, error) {
 	log.Printf("Write Query: query=%v\n", query)
 	result, err := conn.ExecContext(ctx, query)
 

@@ -68,13 +68,13 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 	return fields, nil
 }
 
-func createTable(ctx context.Context, conn *sql.Conn, tableName string, fields []fieldInfo) error {
+func createTable(ctx context.Context, conn *sql.DB, tableName string, fields []fieldInfo) error {
 	query := createTableQuery(tableName, fields)
 	_, err := ExecuteWriteQuery(ctx, query, conn)
 	return err
 }
 
-func addMissingColumns(ctx context.Context, conn *sql.Conn, tableName string, fields []fieldInfo) error {
+func addMissingColumns(ctx context.Context, conn *sql.DB, tableName string, fields []fieldInfo) error {
 	columns, err := getExistingColumns(ctx, conn, tableName)
 	if err != nil {
 		return err
@@ -231,7 +231,7 @@ func getUniqueColumnGroups(t reflect.Type) [][]string {
 	return result
 }
 
-func getExistingColumns(ctx context.Context, conn *sql.Conn, tableName string) ([]string, error) {
+func getExistingColumns(ctx context.Context, conn *sql.DB, tableName string) ([]string, error) {
 	var columns []string
 
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf("pragma table_info('%v')", tableName))
@@ -269,7 +269,7 @@ func getMissingColumns(fields []fieldInfo, columns []string) []string {
 	return missingColumns
 }
 
-func getUniqueConstraints(ctx context.Context, conn *sql.Conn, tableName string) ([][]string, error) {
+func getUniqueConstraints(ctx context.Context, conn *sql.DB, tableName string) ([][]string, error) {
 	query := `
 	SELECT kcu.column_name
 	FROM information_schema.table_constraints tc
@@ -398,7 +398,7 @@ func getSQLType(fieldType reflect.Type, autoincr bool) string {
 	return ""
 }
 
-func tableExists(ctx context.Context, conn *sql.Conn, tableName string) (bool, error) {
+func tableExists(ctx context.Context, conn *sql.DB, tableName string) (bool, error) {
 	tableQuery := "SELECT name FROM sqlite_master WHERE type='table' AND name=?;"
 	var name string
 	err := conn.QueryRowContext(ctx, tableQuery, tableName).Scan(&name)
@@ -423,7 +423,7 @@ func generateAddColumnQuery(tableName string, missingColumns []string) string {
 	return alterQuery
 }
 
-func SyncTable(ctx context.Context, conn *sql.Conn, table interface{}) error {
+func SyncTable(ctx context.Context, conn *sql.DB, table interface{}) error {
 	tableName := GenerateTableName(table)
 	fields, err := getTableInfo(table)
 	if err != nil {

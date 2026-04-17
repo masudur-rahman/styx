@@ -16,11 +16,11 @@ import (
 )
 
 type PostgresDB struct {
-	conn *sql.Conn
+	conn *sql.DB
 	pb.UnimplementedPostgresServer
 }
 
-func NewPostgresDB(conn *sql.Conn) *PostgresDB {
+func NewPostgresDB(conn *sql.DB) *PostgresDB {
 	return &PostgresDB{conn: conn}
 }
 

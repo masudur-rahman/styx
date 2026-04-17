@@ -15,12 +15,12 @@ import (
 )
 
 type SQLite struct {
-	conn      *sql.Conn
+	conn      *sql.DB
 	tx        *sql.Tx
 	statement lib.Statement
 }
 
-func NewSQLite(conn *sql.Conn) SQLite {
+func NewSQLite(conn *sql.DB) SQLite {
 	return SQLite{conn: conn}
 }
 

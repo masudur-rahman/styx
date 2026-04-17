@@ -13,12 +13,12 @@ import (
 )
 
 type Postgres struct {
-	conn      *sql.Conn
+	conn      *sql.DB
 	tx        *sql.Tx
 	statement lib.Statement
 }
 
-func NewPostgres(conn *sql.Conn) Postgres {
+func NewPostgres(conn *sql.DB) Postgres {
 	return Postgres{conn: conn}
 }
 
