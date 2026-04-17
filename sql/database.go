@@ -37,6 +37,7 @@ type Engine interface {
 	Avg(col string, alias ...string) Engine
 	Min(col string, alias ...string) Engine
 	Max(col string, alias ...string) Engine
+	Paginate(page, perPage int64) Engine
 
 	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
 	FindMany(ctx context.Context, documents any, filter ...any) error

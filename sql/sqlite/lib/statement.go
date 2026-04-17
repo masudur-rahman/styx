@@ -291,6 +291,19 @@ func formatAggregate(fn, col string, alias ...string) string {
 	return expr
 }
 
+// Paginate sets LIMIT and OFFSET for page-based pagination.
+func (stmt *Statement) Paginate(page, perPage int64) *Statement {
+	if perPage <= 0 {
+		perPage = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	stmt.limit = perPage
+	stmt.offset = (page - 1) * perPage
+	return stmt
+}
+
 // GenerateReadQuery builds a SELECT query from the current statement state.
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string

@@ -179,6 +179,11 @@ func (pg Postgres) Max(col string, alias ...string) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
+	pg.statement.Paginate(page, perPage)
+	return pg
+}
+
 func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	pg.statement.GenerateWhereClause(filter...)
 

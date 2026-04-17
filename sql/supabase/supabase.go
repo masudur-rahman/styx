@@ -142,6 +142,10 @@ func (s Supabase) Max(col string, alias ...string) isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) Paginate(page, perPage int64) isql.Engine {
+	panic("implement me")
+}
+
 func (s Supabase) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	if err := dberr.CheckIdOrFilterNonEmpty(s.id, filter); err != nil {
 		return false, err

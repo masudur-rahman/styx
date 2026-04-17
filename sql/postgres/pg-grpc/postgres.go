@@ -139,6 +139,10 @@ func (d Database) Max(col string, alias ...string) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) Paginate(page, perPage int64) isql.Engine {
+	panic("implement me")
+}
+
 func (d Database) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	var err error
 	if err = dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {

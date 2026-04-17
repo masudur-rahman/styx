@@ -181,6 +181,11 @@ func (sq SQLite) Max(col string, alias ...string) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
+	sq.statement.Paginate(page, perPage)
+	return sq
+}
+
 func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	sq.statement.GenerateWhereClause(filter...)
 
