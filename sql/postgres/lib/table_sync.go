@@ -198,6 +198,43 @@ func ExtractPKColumn(table any) string {
 	return "id"
 }
 
+// ExtractSoftDeleteColumn returns the column name tagged with soft_delete.
+// Returns empty string if no soft delete tag is found.
+func ExtractSoftDeleteColumn(table any) string {
+	tableType := reflect.TypeOf(table)
+	if tableType.Kind() == reflect.Ptr {
+		tableType = tableType.Elem()
+	}
+	if tableType.Kind() == reflect.Slice {
+		tableType = tableType.Elem()
+	}
+	if tableType.Kind() != reflect.Struct {
+		return ""
+	}
+
+	for i := 0; i < tableType.NumField(); i++ {
+		field := tableType.Field(i)
+		dbTag := field.Tag.Get("db")
+		if dbTag == "" {
+			continue
+		}
+		parts := strings.SplitN(dbTag, ",", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		for _, part := range strings.Fields(parts[1]) {
+			if strings.ToLower(part) == "soft_delete" {
+				colName := parts[0]
+				if colName == "" {
+					colName = strcase.ToSnake(field.Name)
+				}
+				return colName
+			}
+		}
+	}
+	return ""
+}
+
 func getUniqueColumnGroups(t reflect.Type) [][]string {
 	groups := map[int][]string{}
 	groupIndex := 0

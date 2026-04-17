@@ -39,6 +39,10 @@ type Engine interface {
 	Max(col string, alias ...string) Engine
 	Paginate(page, perPage int64) Engine
 
+	WithDeleted() Engine
+	ForceDelete(ctx context.Context, filter ...any) error
+	Restore(ctx context.Context, filter ...any) error
+
 	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
 	FindMany(ctx context.Context, documents any, filter ...any) error
 

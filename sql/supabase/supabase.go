@@ -146,6 +146,18 @@ func (s Supabase) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) WithDeleted() isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) ForceDelete(ctx context.Context, filter ...any) error {
+	panic("implement me")
+}
+
+func (s Supabase) Restore(ctx context.Context, filter ...any) error {
+	panic("implement me")
+}
+
 func (s Supabase) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	if err := dberr.CheckIdOrFilterNonEmpty(s.id, filter); err != nil {
 		return false, err

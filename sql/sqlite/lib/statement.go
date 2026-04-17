@@ -32,6 +32,9 @@ type Statement struct {
 	having           string
 	distinct         bool
 	aggregates       []string
+	softDeleteCol    string
+	withDeleted      bool
+	forceDelete      bool
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -304,6 +307,39 @@ func (stmt *Statement) Paginate(page, perPage int64) *Statement {
 	return stmt
 }
 
+// SoftDeleteCol sets the soft delete column name for the current query.
+func (stmt *Statement) SoftDeleteCol(col string) *Statement {
+	stmt.softDeleteCol = col
+	return stmt
+}
+
+// WithDeleted disables the automatic soft delete filter.
+func (stmt *Statement) WithDeleted() *Statement {
+	stmt.withDeleted = true
+	return stmt
+}
+
+// SetForceDelete marks the next delete as a hard delete even with soft delete enabled.
+func (stmt *Statement) SetForceDelete() *Statement {
+	stmt.forceDelete = true
+	return stmt
+}
+
+// IsSoftDelete returns true if soft delete is enabled and not force-deleting.
+func (stmt *Statement) IsSoftDelete() bool {
+	return stmt.softDeleteCol != "" && !stmt.forceDelete
+}
+
+// GenerateSoftDeleteQuery generates an UPDATE query that sets the soft delete column.
+func (stmt *Statement) GenerateSoftDeleteQuery() string {
+	return fmt.Sprintf("UPDATE \"%s\" SET %s = CURRENT_TIMESTAMP WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
+}
+
+// GenerateRestoreQuery generates an UPDATE that clears the soft delete column.
+func (stmt *Statement) GenerateRestoreQuery() string {
+	return fmt.Sprintf("UPDATE \"%s\" SET %s = NULL WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
+}
+
 // GenerateReadQuery builds a SELECT query from the current statement state.
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string
@@ -329,6 +365,9 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 
 	query := fmt.Sprintf("%s %s FROM \"%s\"", selectKeyword, cols, stmt.table)
 
+	if stmt.softDeleteCol != "" && !stmt.withDeleted {
+		stmt.where = stmt.AddWhereClause(stmt.softDeleteCol + " IS NULL")
+	}
 	if stmt.where != "" {
 		query += " WHERE " + stmt.where
 	}

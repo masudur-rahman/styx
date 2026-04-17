@@ -143,6 +143,18 @@ func (d Database) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) WithDeleted() isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) ForceDelete(ctx context.Context, filter ...any) error {
+	panic("implement me")
+}
+
+func (d Database) Restore(ctx context.Context, filter ...any) error {
+	panic("implement me")
+}
+
 func (d Database) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	var err error
 	if err = dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {

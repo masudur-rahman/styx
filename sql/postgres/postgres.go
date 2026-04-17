@@ -184,7 +184,47 @@ func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) WithDeleted() isql.Engine {
+	pg.statement.WithDeleted()
+	return pg
+}
+
+// detectSoftDelete sets soft delete column from struct tags if present.
+func (pg Postgres) detectSoftDelete(doc any) Postgres {
+	if col := lib.ExtractSoftDeleteColumn(doc); col != "" {
+		pg.statement.SoftDeleteCol(col)
+	}
+	return pg
+}
+
+func (pg Postgres) ForceDelete(ctx context.Context, filter ...any) error {
+	pg.statement.SetForceDelete()
+	return pg.DeleteOne(ctx, filter...)
+}
+
+func (pg Postgres) Restore(ctx context.Context, filter ...any) error {
+	pg.statement.GenerateWhereClause(filter...)
+	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
+		return err
+	}
+
+	query := pg.statement.GenerateRestoreQuery()
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return dberr.DataNotFound
+	}
+	return nil
+}
+
 func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
+	pg = pg.detectSoftDelete(document)
 	pg.statement.GenerateWhereClause(filter...)
 
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -204,6 +244,7 @@ func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bo
 }
 
 func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) error {
+	pg = pg.detectSoftDelete(documents)
 	pg.statement.GenerateWhereClause(filter...)
 
 	query := pg.statement.GenerateReadQuery(documents)
@@ -333,12 +374,20 @@ func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 }
 
 func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
+	if len(filter) > 0 {
+		pg = pg.detectSoftDelete(filter[0])
+	}
 	pg.statement.GenerateWhereClause(filter...)
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
-	query := pg.statement.GenerateDeleteQuery()
+	var query string
+	if pg.statement.IsSoftDelete() {
+		query = pg.statement.GenerateSoftDeleteQuery()
+	} else {
+		query = pg.statement.GenerateDeleteQuery()
+	}
 	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query)
 	if err != nil {
 		return err

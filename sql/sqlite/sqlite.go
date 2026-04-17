@@ -186,7 +186,47 @@ func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) WithDeleted() isql.Engine {
+	sq.statement.WithDeleted()
+	return sq
+}
+
+// detectSoftDelete sets soft delete column from struct tags if present.
+func (sq SQLite) detectSoftDelete(doc any) SQLite {
+	if col := lib.ExtractSoftDeleteColumn(doc); col != "" {
+		sq.statement.SoftDeleteCol(col)
+	}
+	return sq
+}
+
+func (sq SQLite) ForceDelete(ctx context.Context, filter ...any) error {
+	sq.statement.SetForceDelete()
+	return sq.DeleteOne(ctx, filter...)
+}
+
+func (sq SQLite) Restore(ctx context.Context, filter ...any) error {
+	sq.statement.GenerateWhereClause(filter...)
+	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
+		return err
+	}
+
+	query := sq.statement.GenerateRestoreQuery()
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return dberr.DataNotFound
+	}
+	return nil
+}
+
 func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
+	sq = sq.detectSoftDelete(document)
 	sq.statement.GenerateWhereClause(filter...)
 
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -206,6 +246,7 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 }
 
 func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) error {
+	sq = sq.detectSoftDelete(documents)
 	sq.statement.GenerateWhereClause(filter...)
 
 	query := sq.statement.GenerateReadQuery(documents)
@@ -335,12 +376,20 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 }
 
 func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
+	if len(filter) > 0 {
+		sq = sq.detectSoftDelete(filter[0])
+	}
 	sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
-	query := sq.statement.GenerateDeleteQuery()
+	var query string
+	if sq.statement.IsSoftDelete() {
+		query = sq.statement.GenerateSoftDeleteQuery()
+	} else {
+		query = sq.statement.GenerateDeleteQuery()
+	}
 	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
 	if err != nil {
 		return err
