@@ -61,7 +61,7 @@ type ValidationError struct {
 	FieldErrors map[string][]string
 }
 
-func (e ValidationError) Error() string {
+func (e *ValidationError) Error() string {
 	var msgs []string
 	for field, errors := range e.FieldErrors {
 		for _, err := range errors {
@@ -72,8 +72,8 @@ func (e ValidationError) Error() string {
 }
 
 // NewValidationError creates a new ValidationError.
-func NewValidationError(fieldErrors map[string][]string) ValidationError {
-	return ValidationError{FieldErrors: fieldErrors}
+func NewValidationError(fieldErrors map[string][]string) *ValidationError {
+	return &ValidationError{FieldErrors: fieldErrors}
 }
 
 // IsNotFound checks if an error indicates a record not found.
@@ -97,6 +97,6 @@ func IsValidationError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var ve ValidationError
+	var ve *ValidationError
 	return errors.As(err, &ve)
 }
