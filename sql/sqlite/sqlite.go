@@ -10,6 +10,7 @@ import (
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
 	"github.com/masudur-rahman/styx/sql/sqlite/lib"
+	"github.com/masudur-rahman/styx/validation"
 
 	_ "modernc.org/sqlite"
 )
@@ -186,6 +187,11 @@ func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) EnableValidation(enable bool) isql.Engine {
+	sq.statement.EnableValidation(enable)
+	return sq
+}
+
 func (sq SQLite) WithDeleted() isql.Engine {
 	sq.statement.WithDeleted()
 	return sq
@@ -254,6 +260,11 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 }
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
+	if sq.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return nil, err
+		}
+	}
 	pkCol := lib.ExtractPKColumn(document)
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
@@ -355,6 +366,11 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
+	if sq.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return err
+		}
+	}
 	sq.statement.GenerateWhereClause()
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err

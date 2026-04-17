@@ -10,6 +10,7 @@ import (
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
 	"github.com/masudur-rahman/styx/sql/postgres/lib"
+	"github.com/masudur-rahman/styx/validation"
 )
 
 type Postgres struct {
@@ -184,6 +185,11 @@ func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) EnableValidation(enable bool) isql.Engine {
+	pg.statement.EnableValidation(enable)
+	return pg
+}
+
 func (pg Postgres) WithDeleted() isql.Engine {
 	pg.statement.WithDeleted()
 	return pg
@@ -252,6 +258,11 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 }
 
 func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {
+	if pg.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return nil, err
+		}
+	}
 	pkCol := lib.ExtractPKColumn(document)
 	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
@@ -353,6 +364,11 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
+	if pg.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return err
+		}
+	}
 	pg.statement.GenerateWhereClause()
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err

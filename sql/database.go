@@ -42,6 +42,7 @@ type Engine interface {
 	WithDeleted() Engine
 	ForceDelete(ctx context.Context, filter ...any) error
 	Restore(ctx context.Context, filter ...any) error
+	EnableValidation(enable bool) Engine
 
 	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
 	FindMany(ctx context.Context, documents any, filter ...any) error

@@ -143,6 +143,10 @@ func (d Database) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) EnableValidation(enable bool) isql.Engine {
+	panic("implement me")
+}
+
 func (d Database) WithDeleted() isql.Engine {
 	panic("implement me")
 }

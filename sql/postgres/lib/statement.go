@@ -35,6 +35,7 @@ type Statement struct {
 	softDeleteCol    string
 	withDeleted      bool
 	forceDelete      bool
+	validate         bool
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -305,6 +306,17 @@ func (stmt *Statement) Paginate(page, perPage int64) *Statement {
 	stmt.limit = perPage
 	stmt.offset = (page - 1) * perPage
 	return stmt
+}
+
+// EnableValidation enables or disables struct validation before writes.
+func (stmt *Statement) EnableValidation(enable bool) *Statement {
+	stmt.validate = enable
+	return stmt
+}
+
+// ShouldValidate returns true if validation is enabled.
+func (stmt *Statement) ShouldValidate() bool {
+	return stmt.validate
 }
 
 // SoftDeleteCol sets the soft delete column name for the current query.

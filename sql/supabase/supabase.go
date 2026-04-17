@@ -146,6 +146,10 @@ func (s Supabase) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) EnableValidation(enable bool) isql.Engine {
+	panic("implement me")
+}
+
 func (s Supabase) WithDeleted() isql.Engine {
 	panic("implement me")
 }
