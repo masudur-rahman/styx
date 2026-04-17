@@ -26,7 +26,7 @@ type insertTestDoc struct {
 }
 
 func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("test_doc")
+	stmt := new(Statement).Table("test_doc")
 	doc := insertTestDoc{Name: "alice", Email: "alice@test.com"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -38,7 +38,7 @@ func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
 }
 
 func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("test_doc").MustCols("score")
+	stmt := new(Statement).Table("test_doc").MustCols("score")
 	doc := insertTestDoc{Name: "alice"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -54,7 +54,7 @@ type whereTestDoc struct {
 }
 
 func TestGenerateWhereClauseFromFilter_skipsZeroValues(t *testing.T) {
-	stmt := Statement{}
+	stmt := new(Statement)
 	filter := whereTestDoc{UserID: 99}
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
@@ -65,7 +65,7 @@ func TestGenerateWhereClauseFromFilter_skipsZeroValues(t *testing.T) {
 }
 
 func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroString(t *testing.T) {
-	stmt := Statement{}.MustFilterCols("category_id")
+	stmt := new(Statement).MustFilterCols("category_id")
 	filter := whereTestDoc{UserID: 99}
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
@@ -76,7 +76,7 @@ func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroString(t *testi
 }
 
 func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroInt(t *testing.T) {
-	stmt := Statement{}.MustFilterCols("score")
+	stmt := new(Statement).MustFilterCols("score")
 	filter := whereTestDoc{UserID: 99}
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
@@ -94,7 +94,7 @@ type reqTestDoc struct {
 }
 
 func TestGenerateWhereClauseFromFilter_reqTagIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}
+	stmt := new(Statement)
 	filter := reqTestDoc{UserID: 99}
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
@@ -106,7 +106,7 @@ func TestGenerateWhereClauseFromFilter_reqTagIncludesZeroValues(t *testing.T) {
 }
 
 func TestGenerateInsertQuery_reqTagIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("req_doc")
+	stmt := new(Statement).Table("req_doc")
 	doc := reqTestDoc{UserID: 1}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -118,7 +118,7 @@ func TestGenerateInsertQuery_reqTagIncludesZeroValues(t *testing.T) {
 }
 
 func TestGenerateUpdateQuery_reqTagIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("req_doc").Where("user_id = ?", 1)
+	stmt := new(Statement).Table("req_doc").Where("user_id = ?", 1)
 	doc := reqTestDoc{UserID: 1}
 
 	query := stmt.GenerateUpdateQuery(doc)
@@ -129,7 +129,7 @@ func TestGenerateUpdateQuery_reqTagIncludesZeroValues(t *testing.T) {
 }
 
 func TestGenerateWhereClauseFromFilter_noReqTag_skipsZero(t *testing.T) {
-	stmt := Statement{}
+	stmt := new(Statement)
 	filter := whereTestDoc{UserID: 99}
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
@@ -140,7 +140,7 @@ func TestGenerateWhereClauseFromFilter_noReqTag_skipsZero(t *testing.T) {
 }
 
 func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
-	stmt := Statement{}.Table("test_doc").AllCols()
+	stmt := new(Statement).Table("test_doc").AllCols()
 	doc := insertTestDoc{Name: "alice"}
 
 	query := stmt.GenerateInsertQuery(doc)

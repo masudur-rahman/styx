@@ -26,7 +26,7 @@ type insertTestDoc struct {
 }
 
 func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("test_doc")
+	stmt := new(Statement).Table("test_doc")
 	doc := insertTestDoc{Name: "alice", Email: "alice@test.com"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -38,7 +38,7 @@ func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
 }
 
 func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
-	stmt := Statement{}.Table("test_doc").MustCols("score")
+	stmt := new(Statement).Table("test_doc").MustCols("score")
 	doc := insertTestDoc{Name: "alice"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -48,7 +48,7 @@ func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
 }
 
 func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
-	stmt := Statement{}.Table("test_doc").AllCols()
+	stmt := new(Statement).Table("test_doc").AllCols()
 	doc := insertTestDoc{Name: "alice"}
 
 	query := stmt.GenerateInsertQuery(doc)

@@ -55,52 +55,52 @@ func (pg Postgres) Rollback() error {
 }
 
 func (pg Postgres) Table(name string) isql.Engine {
-	pg.statement = pg.statement.Table(name)
+	pg.statement.Table(name)
 	return pg
 }
 
 func (pg Postgres) ID(id any) isql.Engine {
-	pg.statement = pg.statement.ID(id)
+	pg.statement.ID(id)
 	return pg
 }
 
 func (pg Postgres) In(col string, values ...any) isql.Engine {
-	pg.statement = pg.statement.In(col, values...)
+	pg.statement.In(col, values...)
 	return pg
 }
 
 func (pg Postgres) Where(cond string, args ...any) isql.Engine {
-	pg.statement = pg.statement.Where(cond, args...)
+	pg.statement.Where(cond, args...)
 	return pg
 }
 
 func (pg Postgres) Columns(cols ...string) isql.Engine {
-	pg.statement = pg.statement.Columns(cols...)
+	pg.statement.Columns(cols...)
 	return pg
 }
 
 func (pg Postgres) AllCols() isql.Engine {
-	pg.statement = pg.statement.AllCols()
+	pg.statement.AllCols()
 	return pg
 }
 
 func (pg Postgres) MustCols(cols ...string) isql.Engine {
-	pg.statement = pg.statement.MustCols(cols...)
+	pg.statement.MustCols(cols...)
 	return pg
 }
 
 func (pg Postgres) MustFilterCols(cols ...string) isql.Engine {
-	pg.statement = pg.statement.MustFilterCols(cols...)
+	pg.statement.MustFilterCols(cols...)
 	return pg
 }
 
 func (pg Postgres) ShowSQL(showSQL bool) isql.Engine {
-	pg.statement = pg.statement.ShowSQL(showSQL)
+	pg.statement.ShowSQL(showSQL)
 	return pg
 }
 
 func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
-	pg.statement = pg.statement.GenerateWhereClause(filter...)
+	pg.statement.GenerateWhereClause(filter...)
 
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return false, err
@@ -119,7 +119,7 @@ func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bo
 }
 
 func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) error {
-	pg.statement = pg.statement.GenerateWhereClause(filter...)
+	pg.statement.GenerateWhereClause(filter...)
 
 	query := pg.statement.GenerateReadQuery(documents)
 	return pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents)
@@ -127,7 +127,7 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 
 func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {
 	pkCol := lib.ExtractPKColumn(document)
-	pg.statement = pg.statement.PKColumn(pkCol)
+	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
 	id, err = pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
 	if err != nil {
@@ -140,7 +140,7 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 	var ids []any
 	for _, doc := range documents {
 		pkCol := lib.ExtractPKColumn(doc)
-		pg.statement = pg.statement.PKColumn(pkCol)
+		pg.statement.PKColumn(pkCol)
 		query := pg.statement.GenerateInsertQuery(doc)
 		id, err := pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
 		if err != nil {
@@ -227,7 +227,7 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
-	pg.statement = pg.statement.GenerateWhereClause()
+	pg.statement.GenerateWhereClause()
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 }
 
 func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
-	pg.statement = pg.statement.GenerateWhereClause(filter...)
+	pg.statement.GenerateWhereClause(filter...)
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}

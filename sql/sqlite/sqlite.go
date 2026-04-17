@@ -57,52 +57,52 @@ func (sq SQLite) Rollback() error {
 }
 
 func (sq SQLite) Table(name string) isql.Engine {
-	sq.statement = sq.statement.Table(name)
+	sq.statement.Table(name)
 	return sq
 }
 
 func (sq SQLite) ID(id any) isql.Engine {
-	sq.statement = sq.statement.ID(id)
+	sq.statement.ID(id)
 	return sq
 }
 
 func (sq SQLite) In(col string, values ...any) isql.Engine {
-	sq.statement = sq.statement.In(col, values...)
+	sq.statement.In(col, values...)
 	return sq
 }
 
 func (sq SQLite) Where(cond string, args ...any) isql.Engine {
-	sq.statement = sq.statement.Where(cond, args...)
+	sq.statement.Where(cond, args...)
 	return sq
 }
 
 func (sq SQLite) Columns(cols ...string) isql.Engine {
-	sq.statement = sq.statement.Columns(cols...)
+	sq.statement.Columns(cols...)
 	return sq
 }
 
 func (sq SQLite) AllCols() isql.Engine {
-	sq.statement = sq.statement.AllCols()
+	sq.statement.AllCols()
 	return sq
 }
 
 func (sq SQLite) MustCols(cols ...string) isql.Engine {
-	sq.statement = sq.statement.MustCols(cols...)
+	sq.statement.MustCols(cols...)
 	return sq
 }
 
 func (sq SQLite) MustFilterCols(cols ...string) isql.Engine {
-	sq.statement = sq.statement.MustFilterCols(cols...)
+	sq.statement.MustFilterCols(cols...)
 	return sq
 }
 
 func (sq SQLite) ShowSQL(showSQL bool) isql.Engine {
-	sq.statement = sq.statement.ShowSQL(showSQL)
+	sq.statement.ShowSQL(showSQL)
 	return sq
 }
 
 func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
-	sq.statement = sq.statement.GenerateWhereClause(filter...)
+	sq.statement.GenerateWhereClause(filter...)
 
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return false, err
@@ -121,7 +121,7 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 }
 
 func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) error {
-	sq.statement = sq.statement.GenerateWhereClause(filter...)
+	sq.statement.GenerateWhereClause(filter...)
 
 	query := sq.statement.GenerateReadQuery(documents)
 	return sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents)
@@ -129,7 +129,7 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
 	pkCol := lib.ExtractPKColumn(document)
-	sq.statement = sq.statement.PKColumn(pkCol)
+	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
 	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
 	if err != nil {
@@ -142,7 +142,7 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 	var ids []any
 	for _, doc := range documents {
 		pkCol := lib.ExtractPKColumn(doc)
-		sq.statement = sq.statement.PKColumn(pkCol)
+		sq.statement.PKColumn(pkCol)
 		query := sq.statement.GenerateInsertQuery(doc)
 		id, err := sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
 		if err != nil {
@@ -229,7 +229,7 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
-	sq.statement = sq.statement.GenerateWhereClause()
+	sq.statement.GenerateWhereClause()
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 }
 
 func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
-	sq.statement = sq.statement.GenerateWhereClause(filter...)
+	sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}

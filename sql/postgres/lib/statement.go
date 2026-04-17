@@ -27,12 +27,12 @@ type Statement struct {
 	pkColumn         string
 }
 
-func (stmt Statement) Table(name string) Statement {
+func (stmt *Statement) Table(name string) *Statement {
 	stmt.table = name
 	return stmt
 }
 
-func (stmt Statement) ID(id any) Statement {
+func (stmt *Statement) ID(id any) *Statement {
 	if stmt.where != "" {
 		stmt.where += " AND "
 	}
@@ -41,7 +41,7 @@ func (stmt Statement) ID(id any) Statement {
 	return stmt
 }
 
-func (stmt Statement) In(col string, values ...any) Statement {
+func (stmt *Statement) In(col string, values ...any) *Statement {
 	if stmt.where != "" {
 		stmt.where += " AND "
 	}
@@ -57,7 +57,7 @@ func (stmt Statement) In(col string, values ...any) Statement {
 	return stmt
 }
 
-func (stmt Statement) Where(cond string, args ...any) Statement {
+func (stmt *Statement) Where(cond string, args ...any) *Statement {
 	for range args {
 		stmt.argCounter++
 		cond = strings.Replace(cond, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
@@ -72,7 +72,7 @@ func (stmt Statement) Where(cond string, args ...any) Statement {
 	return stmt
 }
 
-func (stmt Statement) GenerateWhereClause(filter ...any) Statement {
+func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
 	stmt.where = stmt.AddWhereClause(GenerateWhereClauseFromID(stmt.id))
 	if len(filter) > 0 {
 		stmt.where = stmt.AddWhereClause(stmt.GenerateWhereClauseFromFilter(filter[0]))
@@ -80,14 +80,14 @@ func (stmt Statement) GenerateWhereClause(filter ...any) Statement {
 	return stmt
 }
 
-func (stmt Statement) CheckWhereClauseNotEmpty() error {
+func (stmt *Statement) CheckWhereClauseNotEmpty() error {
 	if stmt.where == "" {
 		return dberr.ErrMissingWhereClause
 	}
 	return nil
 }
 
-func (stmt Statement) AddWhereClause(cond string) string {
+func (stmt *Statement) AddWhereClause(cond string) string {
 	if stmt.where != "" && cond != "" {
 		stmt.where += " AND "
 	}
@@ -96,39 +96,39 @@ func (stmt Statement) AddWhereClause(cond string) string {
 	return stmt.where
 }
 
-func (stmt Statement) Columns(cols ...string) Statement {
+func (stmt *Statement) Columns(cols ...string) *Statement {
 	stmt.columns = cols
 	return stmt
 }
 
-func (stmt Statement) AllCols() Statement {
+func (stmt *Statement) AllCols() *Statement {
 	stmt.allCols = true
 	return stmt
 }
 
-func (stmt Statement) MustCols(cols ...string) Statement {
+func (stmt *Statement) MustCols(cols ...string) *Statement {
 	stmt.mustCols = cols
 	return stmt
 }
 
 // MustFilterCols marks columns that must be included in WHERE clauses even when zero-valued.
-func (stmt Statement) MustFilterCols(cols ...string) Statement {
+func (stmt *Statement) MustFilterCols(cols ...string) *Statement {
 	stmt.mustFilterCols = cols
 	return stmt
 }
 
-func (stmt Statement) ShowSQL(showSQL bool) Statement {
+func (stmt *Statement) ShowSQL(showSQL bool) *Statement {
 	stmt.showSQL = showSQL
 	return stmt
 }
 
 // PKColumn sets the primary key column name for RETURNING clause in INSERT queries.
-func (stmt Statement) PKColumn(col string) Statement {
+func (stmt *Statement) PKColumn(col string) *Statement {
 	stmt.pkColumn = col
 	return stmt
 }
 
-func (stmt Statement) GenerateReadQuery(doc any) string {
+func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var cols string
 	if stmt.allCols || len(stmt.columns) == 0 {
 		cols = "*"
@@ -154,7 +154,7 @@ func (stmt Statement) GenerateReadQuery(doc any) string {
 	return query
 }
 
-func (stmt Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any) error {
+func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any) error {
 	//defer  stmt.cleanup()
 
 	if stmt.showSQL {
@@ -203,7 +203,7 @@ func (stmt Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sq
 	return sql.ErrNoRows
 }
 
-func (stmt Statement) GenerateInsertQuery(doc any) string {
+func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	stmt.mustColMap = stmt.generateMustColMap()
 	rvalue := reflect.ValueOf(doc)
 	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
@@ -234,7 +234,7 @@ func (stmt Statement) GenerateInsertQuery(doc any) string {
 	return query
 }
 
-func (stmt Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
+func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -256,7 +256,7 @@ func (stmt Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *
 	return id, err
 }
 
-func (stmt Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (sql.Result, error) {
+func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (sql.Result, error) {
 	if stmt.showSQL {
 		log.Printf("Write Query: query: %v, args: %v\n", query, stmt.args)
 	}
@@ -267,7 +267,7 @@ func (stmt Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *s
 	return conn.ExecContext(ctx, query, stmt.args...)
 }
 
-func (stmt Statement) generateMustColMap() map[string]bool {
+func (stmt *Statement) generateMustColMap() map[string]bool {
 	stmt.mustColMap = map[string]bool{}
 	for _, col := range stmt.mustCols {
 		stmt.mustColMap[col] = true
@@ -275,7 +275,7 @@ func (stmt Statement) generateMustColMap() map[string]bool {
 	return stmt.mustColMap
 }
 
-func (stmt Statement) generateMustFilterColMap() map[string]bool {
+func (stmt *Statement) generateMustFilterColMap() map[string]bool {
 	stmt.mustFilterColMap = map[string]bool{}
 	for _, col := range stmt.mustFilterCols {
 		stmt.mustFilterColMap[col] = true
@@ -283,7 +283,7 @@ func (stmt Statement) generateMustFilterColMap() map[string]bool {
 	return stmt.mustFilterColMap
 }
 
-func (stmt Statement) GenerateUpdateQuery(doc any) string {
+func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	stmt.mustColMap = stmt.generateMustColMap()
 	var setValues []string
 	rvalue := reflect.ValueOf(doc)
@@ -312,7 +312,7 @@ func (stmt Statement) GenerateUpdateQuery(doc any) string {
 	return query
 }
 
-func (stmt Statement) GenerateDeleteQuery() string {
+func (stmt *Statement) GenerateDeleteQuery() string {
 	query := fmt.Sprintf("DELETE FROM \"%s\" WHERE %s", stmt.table, stmt.where)
 	return query
 }

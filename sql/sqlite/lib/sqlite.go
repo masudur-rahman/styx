@@ -106,7 +106,7 @@ func GenerateWhereClauseFromID(id any) string {
 
 // GenerateWhereClauseFromFilter builds WHERE conditions from a struct filter.
 // Respects MustFilterCols to include zero-valued fields in the clause.
-func (stmt Statement) GenerateWhereClauseFromFilter(filter any) string {
+func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 	stmt.mustFilterColMap = stmt.generateMustFilterColMap()
 	var conditions []string
 
