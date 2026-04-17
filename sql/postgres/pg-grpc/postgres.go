@@ -316,7 +316,7 @@ func (d Database) DeleteOne(ctx context.Context, filter ...any) error {
 		if err != nil {
 			return err
 		} else if !found {
-			return dberr.DataNotFound
+			return dberr.ErrNotFound
 		}
 		d.id = doc.ID
 	}

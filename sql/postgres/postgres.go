@@ -244,7 +244,7 @@ func (pg Postgres) Restore(ctx context.Context, filter ...any) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return dberr.DataNotFound
+		return dberr.ErrNotFound
 	}
 	return nil
 }
@@ -404,7 +404,7 @@ func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return dberr.DataNotFound
+		return dberr.ErrNotFound
 	}
 	return nil
 }
@@ -433,7 +433,7 @@ func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return dberr.DataNotFound
+		return dberr.ErrNotFound
 	}
 	return nil
 }

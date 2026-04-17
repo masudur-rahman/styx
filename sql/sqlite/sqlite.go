@@ -246,7 +246,7 @@ func (sq SQLite) Restore(ctx context.Context, filter ...any) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return dberr.DataNotFound
+		return dberr.ErrNotFound
 	}
 	return nil
 }
@@ -406,7 +406,7 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return dberr.DataNotFound
+		return dberr.ErrNotFound
 	}
 	return nil
 }
@@ -435,7 +435,7 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return dberr.DataNotFound
+		return dberr.ErrNotFound
 	}
 	return nil
 }

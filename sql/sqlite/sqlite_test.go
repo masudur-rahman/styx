@@ -157,7 +157,7 @@ func TestUpdateOne_nonExistentRow(t *testing.T) {
 	require.Nil(t, err)
 
 	err = db.Table("user").ID(999999).UpdateOne(ctx, User{FullName: "ghost"})
-	assert.ErrorIs(t, err, dberr.DataNotFound)
+	assert.ErrorIs(t, err, dberr.ErrNotFound)
 }
 
 func TestDeleteOne_nonExistentRow(t *testing.T) {
@@ -169,5 +169,5 @@ func TestDeleteOne_nonExistentRow(t *testing.T) {
 	require.Nil(t, err)
 
 	err = db.Table("user").ID(999999).DeleteOne(ctx)
-	assert.ErrorIs(t, err, dberr.DataNotFound)
+	assert.ErrorIs(t, err, dberr.ErrNotFound)
 }
