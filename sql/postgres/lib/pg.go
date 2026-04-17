@@ -4,13 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
-	"reflect"
 	"strings"
 	"time"
 
 	"github.com/masudur-rahman/styx/dberr"
 	"github.com/masudur-rahman/styx/pkg"
+	isql "github.com/masudur-rahman/styx/sql"
 	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
@@ -59,95 +58,35 @@ func fromDBFieldName(fieldName string) string {
 	return strcase.ToLowerCamel(fieldName)
 }
 
-func toColumnValue(key string, val any) (string, string) {
-	key = toDBFieldName(key)
-	value := formatValues(val)
-
-	return key, value
+func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.DB) (sql.Result, error) {
+	return conn.ExecContext(ctx, query)
 }
 
-func formatValues(val any) string {
-	var value string
-	switch v := val.(type) {
-	case string:
-		value = fmt.Sprintf("'%s'", strings.ReplaceAll(v, "'", "''"))
-	case time.Time:
-		value = fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
-	case []string:
-		value = fmt.Sprintf("('%s')", strings.Join(v, "', '"))
-	case []any:
-		value = HandleSliceAny(v)
-	default:
-		if reflect.TypeOf(v).Kind() == reflect.String {
-			value = fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprint(v), "'", "''"))
-		} else {
-			value = fmt.Sprintf("%v", v)
+func MapToRecord(record map[string]any) (*pb.RecordResponse, error) {
+	pm, err := pkg.ToProtoAny(record)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.RecordResponse{Record: pm}, nil
+}
+
+func MapsToRecords(records []map[string]any) (*pb.RecordsResponse, error) {
+	var rs []*pb.RecordResponse
+	for _, r := range records {
+		pm, err := pkg.ToProtoAny(r)
+		if err != nil {
+			return nil, err
 		}
+		rs = append(rs, &pb.RecordResponse{Record: pm})
 	}
-	return value
+	return &pb.RecordsResponse{Records: rs}, nil
 }
 
-func HandleSliceAny(v []any) string {
-	var value string
-	var vals []string
-	typ := reflect.String.String()
-	for _, elem := range v {
-		if str, ok := elem.(string); ok {
-			vals = append(vals, str)
-		} else {
-			typ = reflect.Interface.String()
-			vals = append(vals, fmt.Sprintf("%v", elem))
-		}
-	}
-
-	if typ == reflect.String.String() {
-		value = fmt.Sprintf("('%s')", strings.Join(vals, "', '"))
-	} else {
-		value = fmt.Sprintf("(%s)", strings.Join(vals, ", "))
-	}
-	return value
-}
-
-// generateWhereClauseFromID builds a parameterized WHERE condition from stmt.id.
-func (stmt *Statement) generateWhereClauseFromID() string {
-	if IsZeroValue(stmt.id) {
-		return ""
-	}
-	col := toDBFieldName("id")
-	stmt.argCounter++
-	stmt.args = append(stmt.args, stmt.id)
-	return fmt.Sprintf("%s = $%d", col, stmt.argCounter)
-}
-
-// GenerateWhereClauseFromFilter builds WHERE conditions from a struct filter.
-// Respects MustFilterCols to include zero-valued fields in the clause.
-func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
-	stmt.mustFilterColMap = stmt.generateMustFilterColMap()
+func GenerateReadQuery(tableName string, record map[string]any) string {
 	var conditions []string
-
-	val := reflect.ValueOf(filter)
-	for idx := 0; idx < val.NumField(); idx++ {
-		field := val.Type().Field(idx)
-		col := getFieldName(field)
-
-		if !(stmt.allCols || stmt.mustFilterColMap[col] || hasReqTag(field) || !val.Field(idx).IsZero()) {
-			continue
-		}
-
-		stmt.argCounter++
-		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, stmt.argCounter))
-		stmt.args = append(stmt.args, val.Field(idx).Interface())
-	}
-	return strings.Join(conditions, " AND ")
-}
-
-func GenerateReadQuery(tableName string, filter map[string]any) string {
-	var conditions []string
-
-	for key, val := range filter {
-		// TODO: Add support for passing field_names to be included in query
-		if IsZeroValue(val) {
-			// don't insert the default value checks into the condition array
+	for key, val := range record {
+		if isql.IsZeroValue(val) {
 			continue
 		}
 
@@ -174,66 +113,32 @@ func GenerateReadQuery(tableName string, filter map[string]any) string {
 	return query
 }
 
-func ScanSingleRow(rows *sql.Rows, fieldMap map[string]reflect.Value) error {
-	fields, err := rows.Columns()
+func ExecuteReadQuery(ctx context.Context, query string, conn *sql.DB, lim int64) ([]map[string]any, error) {
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer rows.Close()
 
-	scans := make([]any, len(fields))
-	for i := range scans {
-		scans[i] = &scans[i]
-	}
-	if err = rows.Scan(scans...); err != nil {
-		return err
-	}
-
-	for idx, col := range fields {
-		if IsZeroValue(scans[idx]) {
-			continue
+	records := make([]map[string]any, 0)
+	for rows.Next() {
+		record, err := scanSingleRecord(rows)
+		if err != nil {
+			return nil, err
 		}
-
-		field, ok := fieldMap[col]
-		if ok && field.IsValid() && field.CanSet() {
-			if field.Kind() == reflect.String {
-				field.SetString(reflect.ValueOf(scans[idx]).String())
-			} else {
-				field.Set(reflect.ValueOf(scans[idx]))
-			}
+		records = append(records, record)
+		if lim > 0 && int64(len(records)) >= lim {
+			break
 		}
 	}
-	return nil
-}
 
-func generateDBFieldMapForStruct(doc any) map[string]reflect.Value {
-	elem := reflect.ValueOf(doc).Elem()
-	elemType := elem.Type()
-
-	fieldMap := make(map[string]reflect.Value)
-	for idx := 0; idx < elem.NumField(); idx++ {
-		f := elem.Field(idx)
-		ft := elemType.Field(idx)
-		fieldMap[getFieldName(ft)] = f
+	if err = rows.Err(); err != nil {
+		return nil, err
 	}
-	return fieldMap
-}
-
-func GenerateDBFieldMap(doc any) map[string]reflect.Value {
-	elem := reflect.ValueOf(doc).Elem()
-	elemType := elem.Type()
-	var fieldMap map[string]reflect.Value
-	switch elemType.Kind() {
-	case reflect.Struct:
-		fieldMap = generateDBFieldMapForStruct(doc)
-	case reflect.Slice:
-		elemType = elemType.Elem()
-		if elemType.Kind() == reflect.Ptr {
-			elemType = elemType.Elem()
-		}
-		doc = reflect.New(elemType).Interface()
-		fieldMap = generateDBFieldMapForStruct(doc)
+	if lim == 1 && len(records) < 1 {
+		return nil, sql.ErrNoRows
 	}
-	return fieldMap
+	return records, nil
 }
 
 func scanSingleRecord(rows *sql.Rows) (map[string]any, error) {
@@ -242,7 +147,6 @@ func scanSingleRecord(rows *sql.Rows) (map[string]any, error) {
 		return nil, err
 	}
 	scans := make([]any, len(fields))
-
 	for i := range scans {
 		scans[i] = &scans[i]
 	}
@@ -255,117 +159,51 @@ func scanSingleRecord(rows *sql.Rows) (map[string]any, error) {
 		fieldName := fromDBFieldName(fields[i])
 		record[fieldName] = scans[i]
 	}
-
 	return record, nil
-}
-
-func ExecuteReadQuery(ctx context.Context, query string, conn *sql.DB, lim int64) ([]map[string]any, error) {
-	log.Printf("Read Query: query=%v\n", query)
-	rows, err := conn.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	records := make([]map[string]any, 0)
-
-	for rows.Next() {
-		record, err := scanSingleRecord(rows)
-		if err != nil {
-			return nil, err
-		}
-
-		records = append(records, record)
-		if lim > 0 && int64(len(records)) >= lim {
-			break
-		}
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if lim == 1 && len(records) < 1 {
-		return nil, sql.ErrNoRows
-	}
-
-	return records, nil
 }
 
 func GenerateInsertQuery(tableName string, record map[string]any) string {
 	var cols []string
 	var values []string
-
 	for key, val := range record {
-		//if IsZeroValue(val) {
-		//	// don't need to insert the default values into the table
-		//	continue
-		//}
-
 		col, value := toColumnValue(key, val)
 		cols = append(cols, col)
 		values = append(values, value)
 	}
-
-	colClause := strings.Join(cols, ", ")
-	valClause := strings.Join(values, ", ")
-	query := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", tableName, colClause, valClause)
-
-	return query
-}
-
-func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.DB) (sql.Result, error) {
-	log.Printf("Write Query: query=%v\n", query)
-	result, err := conn.ExecContext(ctx, query)
-
-	return result, err
+	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", tableName, strings.Join(cols, ", "), strings.Join(values, ", "))
 }
 
 func GenerateUpdateQuery(table string, id string, record map[string]any) string {
 	var setValues []string
-
 	for key, val := range record {
-		if IsZeroValue(val) {
-			// don't add the default values into the set query
+		if isql.IsZeroValue(val) {
 			continue
 		}
 		col, value := toColumnValue(key, val)
-		setValue := fmt.Sprintf("%s = %s", col, value)
-		setValues = append(setValues, setValue)
+		setValues = append(setValues, fmt.Sprintf("%s = %s", col, value))
 	}
-
-	setClause := strings.Join(setValues, ", ")
-
-	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = '%s'", table, setClause, id)
-	return query
+	return fmt.Sprintf("UPDATE \"%s\" SET %s WHERE id = '%s'", table, strings.Join(setValues, ", "), id)
 }
 
 func GenerateDeleteQuery(table, id string) string {
-	query := fmt.Sprintf("DELETE FROM %s WHERE id = '%s'", table, id)
-	return query
+	return fmt.Sprintf("DELETE FROM \"%s\" WHERE id = '%s'", table, id)
 }
 
-func MapToRecord(record map[string]any) (*pb.RecordResponse, error) {
-	pm, err := pkg.ToProtoAny(record)
-	if err != nil {
-		return nil, err
-	}
-
-	return &pb.RecordResponse{Record: pm}, nil
+func toColumnValue(key string, val any) (string, string) {
+	key = strcase.ToSnake(key)
+	value := formatValues(val)
+	return key, value
 }
 
-func MapsToRecords(records []map[string]any) (*pb.RecordsResponse, error) {
-	rr := &pb.RecordsResponse{
-		Records: make([]*pb.RecordResponse, 0, len(records)),
+func formatValues(val any) string {
+	switch v := val.(type) {
+	case string:
+		return fmt.Sprintf("'%s'", strings.ReplaceAll(v, "'", "''"))
+	case time.Time:
+		return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
+	case []string:
+		return fmt.Sprintf("('%s')", strings.Join(v, "', '"))
+	default:
+		return fmt.Sprintf("%v", v)
 	}
-
-	for _, record := range records {
-		r, err := MapToRecord(record)
-		if err != nil {
-			return nil, err
-		}
-
-		rr.Records = append(rr.Records, r)
-	}
-	return rr, nil
 }

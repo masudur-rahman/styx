@@ -218,11 +218,11 @@ func (sq SQLite) WithDeleted() isql.Engine {
 }
 
 // detectSoftDelete sets soft delete column from struct tags if present.
-func (sq SQLite) detectSoftDelete(doc any) SQLite {
-	if col := lib.ExtractSoftDeleteColumn(doc); col != "" {
-		sq.statement.SoftDeleteCol(col)
+func (s SQLite) detectSoftDelete(doc any) SQLite {
+	if col := isql.ExtractSoftDeleteColumn(doc); col != "" {
+		s.statement.SoftDeleteCol(col)
 	}
-	return sq
+	return s
 }
 
 func (sq SQLite) ForceDelete(ctx context.Context, filter ...any) error {
@@ -285,7 +285,7 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 			return nil, err
 		}
 	}
-	pkCol := lib.ExtractPKColumn(document)
+	pkCol := isql.GetPKColumn(document)
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
 	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
@@ -298,10 +298,11 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error) {
 	var ids []any
 	for _, doc := range documents {
-		pkCol := lib.ExtractPKColumn(doc)
+		pkCol := isql.GetPKColumn(doc)
 		sq.statement.PKColumn(pkCol)
 		query := sq.statement.GenerateInsertQuery(doc)
 		id, err := sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
+
 		if err != nil {
 			return nil, err
 		}

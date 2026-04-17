@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/masudur-rahman/styx/dberr"
+	isql "github.com/masudur-rahman/styx/sql"
 )
 
 type Statement struct {
@@ -82,6 +85,40 @@ func (stmt *Statement) Where(cond string, args ...any) *Statement {
 		stmt.args = append(stmt.args, newArgs...)
 	}
 	return stmt
+}
+
+func (stmt *Statement) generateWhereClauseFromID() string {
+	if isql.IsZeroValue(stmt.id) {
+		return ""
+	}
+	stmt.argCounter++
+	stmt.args = append(stmt.args, stmt.id)
+	return fmt.Sprintf("id = $%d", stmt.argCounter)
+}
+
+func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
+	stmt.mustFilterColMap = stmt.generateMustFilterColMap()
+	var conditions []string
+
+	val := reflect.ValueOf(filter)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	for idx := 0; idx < val.NumField(); idx++ {
+		field := val.Type().Field(idx)
+		col := isql.GetFieldName(field)
+
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || isql.HasReqTag(field) || !val.Field(idx).IsZero()) {
+			continue
+		}
+
+		stmt.argCounter++
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, stmt.argCounter))
+		stmt.args = append(stmt.args, val.Field(idx).Interface())
+	}
+
+	return strings.Join(conditions, " AND ")
 }
 
 func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
@@ -405,7 +442,7 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 		if val.Kind() == reflect.Slice {
 			doc = val.Index(0).Interface()
 		}
-		stmt.table = GenerateTableName(doc)
+		stmt.table = isql.GetTableName(doc)
 	}
 
 	selectKeyword := "SELECT"
@@ -476,8 +513,7 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	switch elem.Kind() {
 	case reflect.Struct:
 		if rows.Next() {
-			fieldMap := GenerateDBFieldMap(doc)
-			if err = ScanSingleRow(rows, fieldMap); err != nil {
+			if err = isql.ScanRow(rows, doc); err != nil {
 				return err
 			}
 
@@ -485,12 +521,11 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 		}
 	case reflect.Slice:
 		for rows.Next() {
-			rowELem := reflect.New(elem.Type().Elem()).Interface()
-			fieldMap := GenerateDBFieldMap(rowELem)
-			if err = ScanSingleRow(rows, fieldMap); err != nil {
+			rowElem := reflect.New(elem.Type().Elem()).Interface()
+			if err = isql.ScanRow(rows, rowElem); err != nil {
 				return err
 			}
-			elem.Set(reflect.Append(elem, reflect.ValueOf(rowELem).Elem()))
+			elem.Set(reflect.Append(elem, reflect.ValueOf(rowElem).Elem()))
 		}
 
 		return rows.Err()
@@ -508,9 +543,9 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	var cols, placeholders []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		col := getFieldName(field)
+		col := isql.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || hasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
@@ -521,7 +556,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	}
 
 	if stmt.table == "" {
-		stmt.table = GenerateTableName(doc)
+		stmt.table = isql.GetTableName(doc)
 	}
 
 	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
@@ -589,9 +624,9 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	freshCounter := 0
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		col := getFieldName(field)
+		col := isql.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || hasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
@@ -601,15 +636,15 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	}
 
 	if stmt.table == "" {
-		stmt.table = GenerateTableName(doc)
+		stmt.table = isql.GetTableName(doc)
 	}
 
 	// Renumber existing WHERE placeholders ($1...$n → $(freshCounter+1)...$(freshCounter+n))
-	for i := stmt.argCounter; i >= 1; i-- {
-		stmt.where = strings.ReplaceAll(stmt.where,
-			fmt.Sprintf("$%d", i),
-			fmt.Sprintf("$%d", i+freshCounter))
-	}
+	re := regexp.MustCompile(`\$(\d+)\b`)
+	stmt.where = re.ReplaceAllStringFunc(stmt.where, func(m string) string {
+		n, _ := strconv.Atoi(m[1:])
+		return fmt.Sprintf("$%d", n+freshCounter)
+	})
 
 	// SET args before WHERE args so SQL argument order matches
 	stmt.args = append(setArgs, stmt.args...)

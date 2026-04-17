@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/masudur-rahman/styx/dberr"
+	isql "github.com/masudur-rahman/styx/sql"
 )
 
 type Statement struct {
@@ -21,8 +22,8 @@ type Statement struct {
 	mustFilterCols   []string
 	mustFilterColMap map[string]bool
 	where            string
-	args    []any
-	showSQL bool
+	args             []any
+	showSQL          bool
 	pkColumn         string
 	orderBy          []string
 	limit            int64
@@ -74,6 +75,38 @@ func (stmt *Statement) Where(cond string, args ...any) *Statement {
 		stmt.args = append(stmt.args, newArgs...)
 	}
 	return stmt
+}
+
+func (stmt *Statement) generateWhereClauseFromID() string {
+	if isql.IsZeroValue(stmt.id) {
+		return ""
+	}
+	stmt.args = append(stmt.args, stmt.id)
+	return "id = ?"
+}
+
+func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
+	stmt.mustFilterColMap = stmt.generateMustFilterColMap()
+	var conditions []string
+
+	val := reflect.ValueOf(filter)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	for idx := 0; idx < val.NumField(); idx++ {
+		field := val.Type().Field(idx)
+		col := isql.GetFieldName(field)
+
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || isql.HasReqTag(field) || !val.Field(idx).IsZero()) {
+			continue
+		}
+
+		conditions = append(conditions, col+" = ?")
+		stmt.args = append(stmt.args, val.Field(idx).Interface())
+	}
+
+	return strings.Join(conditions, " AND ")
 }
 
 func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
@@ -367,7 +400,7 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	}
 
 	if stmt.table == "" {
-		stmt.table = GenerateTableName(doc)
+		stmt.table = isql.GetTableName(doc)
 	}
 
 	selectKeyword := "SELECT"
@@ -438,8 +471,7 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	switch elem.Kind() {
 	case reflect.Struct:
 		if rows.Next() {
-			fieldMap := GenerateDBFieldMap(doc)
-			if err = ScanSingleRow(rows, fieldMap); err != nil {
+			if err = isql.ScanRow(rows, doc); err != nil {
 				return err
 			}
 
@@ -447,12 +479,11 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 		}
 	case reflect.Slice:
 		for rows.Next() {
-			rowELem := reflect.New(elem.Type().Elem()).Interface()
-			fieldMap := GenerateDBFieldMap(rowELem)
-			if err = ScanSingleRow(rows, fieldMap); err != nil {
+			rowElem := reflect.New(elem.Type().Elem()).Interface()
+			if err = isql.ScanRow(rows, rowElem); err != nil {
 				return err
 			}
-			elem.Set(reflect.Append(elem, reflect.ValueOf(rowELem).Elem()))
+			elem.Set(reflect.Append(elem, reflect.ValueOf(rowElem).Elem()))
 		}
 
 		return rows.Err()
@@ -470,9 +501,9 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	var cols []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		col := getFieldName(field)
+		col := isql.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || hasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
@@ -481,7 +512,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	}
 
 	if stmt.table == "" {
-		stmt.table = GenerateTableName(doc)
+		stmt.table = isql.GetTableName(doc)
 	}
 
 	placeholders := make([]string, len(cols))
@@ -553,9 +584,9 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	}
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		col := getFieldName(field)
+		col := isql.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || hasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
@@ -564,7 +595,7 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	}
 
 	if stmt.table == "" {
-		stmt.table = GenerateTableName(doc)
+		stmt.table = isql.GetTableName(doc)
 	}
 
 	// SET args go before WHERE args in the driver call

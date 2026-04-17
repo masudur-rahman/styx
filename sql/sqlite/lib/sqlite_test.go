@@ -135,10 +135,10 @@ func TestGenerateUpdateQuery_reqTagIncludesZeroValues(t *testing.T) {
 	assert.Contains(t, query, "alert_at = ?")
 	assert.NotContains(t, query, "score")
 	// SET args come before WHERE args in driver call
-	assert.Equal(t, int64(1), stmt.args[0])                // user_id SET value
-	assert.Equal(t, "", stmt.args[1])                       // category_id SET value
-	assert.Equal(t, int64(0), stmt.args[2])                 // alert_at SET value
-	assert.Equal(t, 1, stmt.args[len(stmt.args)-1])         // WHERE arg last
+	assert.Equal(t, int64(1), stmt.args[0])         // user_id SET value
+	assert.Equal(t, "", stmt.args[1])               // category_id SET value
+	assert.Equal(t, int64(0), stmt.args[2])         // alert_at SET value
+	assert.Equal(t, 1, stmt.args[len(stmt.args)-1]) // WHERE arg last
 }
 
 func TestGenerateWhereClauseFromFilter_noReqTag_skipsZero(t *testing.T) {

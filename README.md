@@ -20,6 +20,8 @@ go get -u github.com/masudur-rahman/styx
 
 ## Quickstart
 
+Check out the [Quickstart Example](examples/quickstart.go) for a complete guide.
+
 ```go
 package main
 
@@ -41,31 +43,24 @@ type User struct {
 }
 
 func main() {
+	ctx := context.Background()
 	conn, _ := lib.GetSQLiteConnection("test.db")
 
-	var db sql.Engine
-	db = sqlite.NewSQLite(context.Background(), conn)
+	db := sqlite.NewSQLite(conn)
 
 	// Migrate database
-	db.Sync(User{})
+	db.Sync(ctx, User{})
 
-	db = db.Table("user")
+	// Fluent CRUD
+	db.Table("user").InsertOne(ctx, &User{Name: "masud", FullName: "Masudur Rahman", Email: "masud@example.com"})
 
-	// Insert
-	db.InsertOne(&User{Name: "masud", FullName: "Masudur Rahman", Email: "masud@example.com"})
-
-	// Read
 	var user User
-	db.ID(1).FindOne(&user)
-	db.Where("email=?", "masud@example.com").FindOne(&user)
-	db.FindOne(&user, User{Name: "masud"})
+	db.Table("user").ID(1).FindOne(ctx, &user)
+	db.Table("user").Where("email=?", "masud@example.com").FindOne(ctx, &user)
 
-	// Update
-	db.ID(user.ID).UpdateOne(User{Email: "test@example.com"})
+	db.Table("user").ID(user.ID).UpdateOne(ctx, User{Email: "test@example.com"})
 
-	// Delete
-	db.ID(1).DeleteOne()
-	db.DeleteOne(User{Name: "masud"})
+	db.Table("user").ID(1).DeleteOne(ctx)
 }
 ```
 
@@ -175,6 +170,45 @@ All database engines implement the `sql.Engine` interface. Methods are chainable
 | `Where(cond string, args ...any)`   | Add raw WHERE condition with `?` placeholders |
 | `In(col string, values ...any)`     | Add `col IN (...)` filter                  |
 | `Columns(cols ...string)`           | Select specific columns (default: `*`)     |
+| `OrderBy(col, dir)`                 | Sort results (`ASC` or `DESC`)             |
+| `Paginate(page, perPage)`           | Automatic `LIMIT` and `OFFSET`             |
+| `Join(table, on)`                   | Add `JOIN` (also `LeftJoin`, `InnerJoin`)  |
+| `GroupBy(cols...)`                  | Add `GROUP BY` clause                      |
+| `Having(cond, args...)`             | Add `HAVING` clause for groups             |
+| `Distinct()`                        | Enable `SELECT DISTINCT`                   |
+
+### Features
+
+#### Aggregates
+Perform calculations directly through the query builder:
+```go
+db.Table("user").Count("id", "total_users").FindMany(&results)
+db.Table("user").Avg("age", "average_age").FindMany(&results)
+// Supported: Count, Sum, Avg, Min, Max
+```
+
+#### Soft Delete
+Declaratively enable soft deletes using struct tags:
+```go
+type User struct {
+    ID        int64      `db:"id,pk"`
+    DeletedAt *time.Time `db:"deleted_at,soft_delete"`
+}
+
+db.DeleteOne(User{ID: 1}) // Sets deleted_at = CURRENT_TIMESTAMP
+db.FindMany(&users)       // Automatically filters out rows where deleted_at IS NOT NULL
+db.WithDeleted().FindMany(&users) // Includes deleted rows
+```
+
+#### Struct Validation
+Integrate validation rules into your models:
+```go
+type User struct {
+    Email string `db:"email" validate:"required,email"`
+}
+
+db.EnableValidation(true).InsertOne(&user) // Returns error if validation fails
+```
 
 ### Zero-Value Control
 
@@ -217,13 +251,13 @@ Creates tables if they don't exist, adds missing columns to existing tables.
 rows, err := db.Query("SELECT * FROM user WHERE name = ?", "masud")
 result, err := db.Exec("DELETE FROM user WHERE id = ?", 1)
 ```
-
 ## Unit of Work
 
-Styx provides a Unit of Work pattern to coordinate transactions across multiple database engines (SQL + NoSQL).
+Styx provides a Unit of Work pattern to coordinate transactions across multiple database engines (SQL + NoSQL). See [Unit of Work Documentation](docs/unit_of_work.md) for more details.
 
 ```go
 uow := styx.NewUnitOfWork(sqlEngine, nosqlEngine)
+
 err := uow.Execute(func(sqlTx sql.Engine, nosqlTx nosql.Engine) error {
 	sqlTx.Table("user").InsertOne(&user)
 	nosqlTx.Collection("logs").InsertOne(logEntry)

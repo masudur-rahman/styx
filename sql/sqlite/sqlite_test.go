@@ -117,33 +117,41 @@ func TestPostgres_InsertOne(t *testing.T) {
 	})
 }
 
-func TestPostgres_UpdateOne(t *testing.T) {
+func TestSQLite_UpdateOne(t *testing.T) {
 	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
 	db = db.Table("user")
+	user := User{Name: "test", Email: "test@e.c"}
+	id, _ := db.InsertOne(ctx, &user)
+
 	t.Run("update data", func(t *testing.T) {
-		user := User{
+		update := User{
 			FullName: "Test Name 2",
 		}
-		err := db.ID(1).UpdateOne(ctx, user)
+		err := db.ID(id).UpdateOne(ctx, update)
 		assert.Nil(t, err)
 	})
 }
 
-func TestPostgres_DeleteOne(t *testing.T) {
+func TestSQLite_DeleteOne(t *testing.T) {
 	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
 	db = db.Table("user")
+	user := User{Name: "del", Email: "del@e.c"}
+	id, _ := db.InsertOne(ctx, &user)
+
 	t.Run("delete data", func(t *testing.T) {
-		err := db.ID(4).DeleteOne(ctx)
+		err := db.ID(id).DeleteOne(ctx)
 		assert.Nil(t, err)
 	})
 	t.Run("delete data from filter", func(t *testing.T) {
-		err := db.DeleteOne(ctx, User{ID: 3})
+		user2 := User{Name: "del2", Email: "del2@e.c"}
+		id2, _ := db.InsertOne(ctx, &user2)
+		err := db.DeleteOne(ctx, User{ID: id2.(int64)})
 		assert.Nil(t, err)
 	})
 }

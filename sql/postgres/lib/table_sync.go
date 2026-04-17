@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	isql "github.com/masudur-rahman/styx/sql"
+
 	"github.com/iancoleman/strcase"
 )
 
@@ -18,24 +20,7 @@ type fieldInfo struct {
 }
 
 func GenerateTableName(table interface{}) string {
-	tableType := reflect.TypeOf(table)
-	tableValue := reflect.ValueOf(table)
-	if tableType.Kind() == reflect.Ptr {
-		tableType = tableType.Elem()
-		tableValue = reflect.New(tableType)
-	}
-	if tableType.Kind() == reflect.Slice {
-		tableType = tableType.Elem()
-		tableValue = reflect.New(tableType)
-	}
-	tableName := tableType.Name()
-	tableName = strcase.ToSnake(tableName)
-	if method := tableValue.MethodByName("TableName"); method.IsValid() {
-		rs := method.Call([]reflect.Value{})
-		tableName = rs[0].String()
-	}
-
-	return tableName
+	return isql.GetTableName(table)
 }
 
 func getTableInfo(table interface{}) ([]fieldInfo, error) {
@@ -106,15 +91,7 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 }
 
 func getFieldName(fieldType reflect.StructField) string {
-	fieldName := fieldType.Name
-	if dbTag := fieldType.Tag.Get("db"); dbTag != "" {
-		colName := strings.Split(dbTag, ",")[0]
-		if colName != "" {
-			fieldName = colName
-		}
-	}
-
-	return strcase.ToSnake(fieldName)
+	return isql.GetFieldName(fieldType)
 }
 
 func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool, isComposite bool) {
@@ -143,22 +120,8 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 	return strings.Join(constraints, " "), autoincr, isComposite
 }
 
-// hasReqTag checks if a struct field has the "req" option in its db tag.
 func hasReqTag(field reflect.StructField) bool {
-	dbTag := field.Tag.Get("db")
-	if dbTag == "" {
-		return false
-	}
-	parts := strings.SplitN(dbTag, ",", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	for _, part := range strings.Fields(parts[1]) {
-		if strings.ToUpper(part) == "REQ" {
-			return true
-		}
-	}
-	return false
+	return isql.HasReqTag(field)
 }
 
 // ExtractPKColumn returns the primary key column name from a struct's pk tag.
@@ -260,6 +223,9 @@ func getUniqueColumnGroups(t reflect.Type) [][]string {
 }
 
 func getSQLType(fieldType reflect.Type, autoincr bool) string {
+	for fieldType.Kind() == reflect.Ptr {
+		fieldType = fieldType.Elem()
+	}
 	if autoincr {
 		switch fieldType.Kind() {
 		case reflect.Int, reflect.Int32:

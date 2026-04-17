@@ -217,7 +217,7 @@ func (pg Postgres) WithDeleted() isql.Engine {
 
 // detectSoftDelete sets soft delete column from struct tags if present.
 func (pg Postgres) detectSoftDelete(doc any) Postgres {
-	if col := lib.ExtractSoftDeleteColumn(doc); col != "" {
+	if col := isql.ExtractSoftDeleteColumn(doc); col != "" {
 		pg.statement.SoftDeleteCol(col)
 	}
 	return pg
@@ -283,7 +283,7 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 			return nil, err
 		}
 	}
-	pkCol := lib.ExtractPKColumn(document)
+	pkCol := isql.GetPKColumn(document)
 	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
 	id, err = pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
@@ -296,7 +296,7 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, error) {
 	var ids []any
 	for _, doc := range documents {
-		pkCol := lib.ExtractPKColumn(doc)
+		pkCol := isql.GetPKColumn(doc)
 		pg.statement.PKColumn(pkCol)
 		query := pg.statement.GenerateInsertQuery(doc)
 		id, err := pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)

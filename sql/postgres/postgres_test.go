@@ -135,11 +135,18 @@ func TestPostgres_UpdateOne(t *testing.T) {
 	defer closer()
 
 	db = db.Table("test_user")
-	t.Run("insert data", func(t *testing.T) {
-		user := TestUser{
+	user := TestUser{
+		Name:     "test",
+		FullName: "Test Name",
+		Email:    "test@example.com",
+	}
+	db.InsertOne(ctx, &user)
+
+	t.Run("update data", func(t *testing.T) {
+		update := TestUser{
 			FullName: "Test Name 2",
 		}
-		err := db.Where("name='test'").UpdateOne(ctx, user)
+		err := db.Where("name='test'").UpdateOne(ctx, update)
 		assert.Nil(t, err)
 	})
 }
@@ -150,12 +157,17 @@ func TestPostgres_DeleteOne(t *testing.T) {
 	defer closer()
 
 	db = db.Table("test_user")
+	user := TestUser{Name: "del", Email: "del@e.c"}
+	id, _ := db.InsertOne(ctx, &user)
+
 	t.Run("delete data", func(t *testing.T) {
-		err := db.ID(8).DeleteOne(ctx)
+		err := db.ID(id).DeleteOne(ctx)
 		assert.Nil(t, err)
 	})
 	t.Run("delete data from filter", func(t *testing.T) {
-		err := db.DeleteOne(ctx, TestUser{ID: 7})
+		user2 := TestUser{Name: "del2", Email: "del2@e.c"}
+		id2, _ := db.InsertOne(ctx, &user2)
+		err := db.DeleteOne(ctx, TestUser{ID: id2.(int64)})
 		assert.Nil(t, err)
 	})
 }
