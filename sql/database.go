@@ -39,6 +39,11 @@ type Engine interface {
 	Max(col string, alias ...string) Engine
 	Paginate(page, perPage int64) Engine
 
+	Join(table, condition string) Engine
+	LeftJoin(table, condition string) Engine
+	RightJoin(table, condition string) Engine
+	InnerJoin(table, condition string) Engine
+
 	WithDeleted() Engine
 	ForceDelete(ctx context.Context, filter ...any) error
 	Restore(ctx context.Context, filter ...any) error

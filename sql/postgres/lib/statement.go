@@ -36,6 +36,7 @@ type Statement struct {
 	withDeleted      bool
 	forceDelete      bool
 	validate         bool
+	joins            []string
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -319,6 +320,40 @@ func (stmt *Statement) ShouldValidate() bool {
 	return stmt.validate
 }
 
+// Join adds a JOIN clause.
+func (stmt *Statement) Join(table string, on string, args ...any) *Statement {
+	return stmt.addJoin("JOIN", table, on, args...)
+}
+
+// LeftJoin adds a LEFT JOIN clause.
+func (stmt *Statement) LeftJoin(table string, on string, args ...any) *Statement {
+	return stmt.addJoin("LEFT JOIN", table, on, args...)
+}
+
+// RightJoin adds a RIGHT JOIN clause.
+func (stmt *Statement) RightJoin(table string, on string, args ...any) *Statement {
+	return stmt.addJoin("RIGHT JOIN", table, on, args...)
+}
+
+// InnerJoin adds an INNER JOIN clause.
+func (stmt *Statement) InnerJoin(table string, on string, args ...any) *Statement {
+	return stmt.addJoin("INNER JOIN", table, on, args...)
+}
+
+func (stmt *Statement) addJoin(joinType, table, on string, args ...any) *Statement {
+	for range args {
+		stmt.argCounter++
+		on = strings.Replace(on, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
+	}
+	stmt.joins = append(stmt.joins, fmt.Sprintf("%s \"%s\" ON %s", joinType, table, on))
+	if len(args) > 0 {
+		newArgs := make([]any, len(args))
+		copy(newArgs, args)
+		stmt.args = append(stmt.args, newArgs...)
+	}
+	return stmt
+}
+
 // SoftDeleteCol sets the soft delete column name for the current query.
 func (stmt *Statement) SoftDeleteCol(col string) *Statement {
 	stmt.softDeleteCol = col
@@ -380,6 +415,10 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	}
 
 	query := fmt.Sprintf("%s %s FROM \"%s\"", selectKeyword, cols, stmt.table)
+
+	for _, join := range stmt.joins {
+		query += " " + join
+	}
 
 	if stmt.softDeleteCol != "" && !stmt.withDeleted {
 		stmt.where = stmt.AddWhereClause(stmt.softDeleteCol + " IS NULL")

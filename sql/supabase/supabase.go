@@ -146,6 +146,22 @@ func (s Supabase) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) Join(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) LeftJoin(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) RightJoin(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) InnerJoin(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
 func (s Supabase) EnableValidation(enable bool) isql.Engine {
 	panic("implement me")
 }

@@ -187,6 +187,26 @@ func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) Join(table, condition string) isql.Engine {
+	sq.statement.Join(table, condition)
+	return sq
+}
+
+func (sq SQLite) LeftJoin(table, condition string) isql.Engine {
+	sq.statement.LeftJoin(table, condition)
+	return sq
+}
+
+func (sq SQLite) RightJoin(table, condition string) isql.Engine {
+	sq.statement.RightJoin(table, condition)
+	return sq
+}
+
+func (sq SQLite) InnerJoin(table, condition string) isql.Engine {
+	sq.statement.InnerJoin(table, condition)
+	return sq
+}
+
 func (sq SQLite) EnableValidation(enable bool) isql.Engine {
 	sq.statement.EnableValidation(enable)
 	return sq

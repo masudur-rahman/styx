@@ -185,6 +185,26 @@ func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) Join(table, condition string) isql.Engine {
+	pg.statement.Join(table, condition)
+	return pg
+}
+
+func (pg Postgres) LeftJoin(table, condition string) isql.Engine {
+	pg.statement.LeftJoin(table, condition)
+	return pg
+}
+
+func (pg Postgres) RightJoin(table, condition string) isql.Engine {
+	pg.statement.RightJoin(table, condition)
+	return pg
+}
+
+func (pg Postgres) InnerJoin(table, condition string) isql.Engine {
+	pg.statement.InnerJoin(table, condition)
+	return pg
+}
+
 func (pg Postgres) EnableValidation(enable bool) isql.Engine {
 	pg.statement.EnableValidation(enable)
 	return pg

@@ -143,6 +143,22 @@ func (d Database) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) Join(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) LeftJoin(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) RightJoin(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) InnerJoin(table, condition string) isql.Engine {
+	panic("implement me")
+}
+
 func (d Database) EnableValidation(enable bool) isql.Engine {
 	panic("implement me")
 }
