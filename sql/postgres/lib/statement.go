@@ -399,12 +399,6 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	if len(colParts) == 0 {
 		colParts = []string{"*"}
 	}
-	cols := strings.Join(colParts, ", ")
-
-	selectKeyword := "SELECT"
-	if stmt.distinct {
-		selectKeyword = "SELECT DISTINCT"
-	}
 
 	if stmt.table == "" {
 		val := reflect.ValueOf(doc)
@@ -414,35 +408,46 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 		stmt.table = GenerateTableName(doc)
 	}
 
-	query := fmt.Sprintf("%s %s FROM \"%s\"", selectKeyword, cols, stmt.table)
+	selectKeyword := "SELECT"
+	if stmt.distinct {
+		selectKeyword = "SELECT DISTINCT"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s FROM \"%s\"", selectKeyword, strings.Join(colParts, ", "), stmt.table)
 
 	for _, join := range stmt.joins {
-		query += " " + join
+		b.WriteString(" ")
+		b.WriteString(join)
 	}
 
 	if stmt.softDeleteCol != "" && !stmt.withDeleted {
 		stmt.where = stmt.AddWhereClause(stmt.softDeleteCol + " IS NULL")
 	}
 	if stmt.where != "" {
-		query += " WHERE " + stmt.where
+		b.WriteString(" WHERE ")
+		b.WriteString(stmt.where)
 	}
 	if len(stmt.groupBy) > 0 {
-		query += " GROUP BY " + strings.Join(stmt.groupBy, ", ")
+		b.WriteString(" GROUP BY ")
+		b.WriteString(strings.Join(stmt.groupBy, ", "))
 	}
 	if stmt.having != "" {
-		query += " HAVING " + stmt.having
+		b.WriteString(" HAVING ")
+		b.WriteString(stmt.having)
 	}
 	if len(stmt.orderBy) > 0 {
-		query += " ORDER BY " + strings.Join(stmt.orderBy, ", ")
+		b.WriteString(" ORDER BY ")
+		b.WriteString(strings.Join(stmt.orderBy, ", "))
 	}
 	if stmt.limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", stmt.limit)
+		fmt.Fprintf(&b, " LIMIT %d", stmt.limit)
 	}
 	if stmt.offset > 0 {
-		query += fmt.Sprintf(" OFFSET %d", stmt.offset)
+		fmt.Fprintf(&b, " OFFSET %d", stmt.offset)
 	}
 
-	return query
+	return b.String()
 }
 
 func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any) error {

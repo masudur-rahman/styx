@@ -81,10 +81,7 @@ func IsNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ErrNotFound) || errors.Is(err, DataNotFound) {
-		return true
-	}
-	return errors.Is(err, ErrNotFound)
+	return errors.Is(err, ErrNotFound) || errors.Is(err, DataNotFound)
 }
 
 // IsDuplicate checks if an error indicates a duplicate entry.
