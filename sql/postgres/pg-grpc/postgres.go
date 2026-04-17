@@ -75,6 +75,70 @@ func (d Database) ShowSQL(showSQL bool) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) OrderBy(col string, direction ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Limit(n int64) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Offset(n int64) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Distinct() isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) GroupBy(cols ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Having(cond string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Or(cond string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Like(col string, pattern string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) NotLike(col string, pattern string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Exists(subquery string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) NotExists(subquery string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Count(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Sum(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Avg(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Min(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (d Database) Max(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
 func (d Database) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	var err error
 	if err = dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {

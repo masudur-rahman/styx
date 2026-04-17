@@ -101,6 +101,86 @@ func (sq SQLite) ShowSQL(showSQL bool) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) OrderBy(col string, direction ...string) isql.Engine {
+	sq.statement.OrderBy(col, direction...)
+	return sq
+}
+
+func (sq SQLite) Limit(n int64) isql.Engine {
+	sq.statement.Limit(n)
+	return sq
+}
+
+func (sq SQLite) Offset(n int64) isql.Engine {
+	sq.statement.Offset(n)
+	return sq
+}
+
+func (sq SQLite) Distinct() isql.Engine {
+	sq.statement.Distinct()
+	return sq
+}
+
+func (sq SQLite) GroupBy(cols ...string) isql.Engine {
+	sq.statement.GroupBy(cols...)
+	return sq
+}
+
+func (sq SQLite) Having(cond string, args ...any) isql.Engine {
+	sq.statement.Having(cond, args...)
+	return sq
+}
+
+func (sq SQLite) Or(cond string, args ...any) isql.Engine {
+	sq.statement.Or(cond, args...)
+	return sq
+}
+
+func (sq SQLite) Like(col string, pattern string) isql.Engine {
+	sq.statement.Like(col, pattern)
+	return sq
+}
+
+func (sq SQLite) NotLike(col string, pattern string) isql.Engine {
+	sq.statement.NotLike(col, pattern)
+	return sq
+}
+
+func (sq SQLite) Exists(subquery string, args ...any) isql.Engine {
+	sq.statement.Exists(subquery, args...)
+	return sq
+}
+
+func (sq SQLite) NotExists(subquery string, args ...any) isql.Engine {
+	sq.statement.NotExists(subquery, args...)
+	return sq
+}
+
+func (sq SQLite) Count(col string, alias ...string) isql.Engine {
+	sq.statement.Count(col, alias...)
+	return sq
+}
+
+func (sq SQLite) Sum(col string, alias ...string) isql.Engine {
+	sq.statement.Sum(col, alias...)
+	return sq
+}
+
+func (sq SQLite) Avg(col string, alias ...string) isql.Engine {
+	sq.statement.Avg(col, alias...)
+	return sq
+}
+
+func (sq SQLite) Min(col string, alias ...string) isql.Engine {
+	sq.statement.Min(col, alias...)
+	return sq
+}
+
+func (sq SQLite) Max(col string, alias ...string) isql.Engine {
+	sq.statement.Max(col, alias...)
+	return sq
+}
+
 func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	sq.statement.GenerateWhereClause(filter...)
 

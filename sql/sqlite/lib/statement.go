@@ -25,6 +25,13 @@ type Statement struct {
 	argCounter       int
 	showSQL          bool
 	pkColumn         string
+	orderBy          []string
+	limit            int64
+	offset           int64
+	groupBy          []string
+	having           string
+	distinct         bool
+	aggregates       []string
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -128,28 +135,204 @@ func (stmt *Statement) PKColumn(col string) *Statement {
 	return stmt
 }
 
-func (stmt *Statement) GenerateReadQuery(doc any) string {
-	var cols string
-	if stmt.allCols || len(stmt.columns) == 0 {
-		cols = "*"
+// OrderBy adds an ORDER BY clause. Default direction is ASC.
+func (stmt *Statement) OrderBy(col string, direction ...string) *Statement {
+	dir := "ASC"
+	if len(direction) > 0 && strings.ToUpper(direction[0]) == "DESC" {
+		dir = "DESC"
+	}
+	stmt.orderBy = append(stmt.orderBy, fmt.Sprintf("%s %s", col, dir))
+	return stmt
+}
+
+// Limit sets the maximum number of rows to return.
+func (stmt *Statement) Limit(n int64) *Statement {
+	stmt.limit = n
+	return stmt
+}
+
+// Offset sets the number of rows to skip.
+func (stmt *Statement) Offset(n int64) *Statement {
+	stmt.offset = n
+	return stmt
+}
+
+// Distinct enables SELECT DISTINCT.
+func (stmt *Statement) Distinct() *Statement {
+	stmt.distinct = true
+	return stmt
+}
+
+// GroupBy adds GROUP BY columns.
+func (stmt *Statement) GroupBy(cols ...string) *Statement {
+	stmt.groupBy = append(stmt.groupBy, cols...)
+	return stmt
+}
+
+// Having sets the HAVING clause for GROUP BY filtering.
+func (stmt *Statement) Having(cond string, args ...any) *Statement {
+	for range args {
+		stmt.argCounter++
+		cond = strings.Replace(cond, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
+	}
+	stmt.having = cond
+	if len(args) > 0 {
+		newArgs := make([]any, len(args))
+		copy(newArgs, args)
+		stmt.args = append(stmt.args, newArgs...)
+	}
+	return stmt
+}
+
+// Or adds an OR condition to the WHERE clause.
+func (stmt *Statement) Or(cond string, args ...any) *Statement {
+	for range args {
+		stmt.argCounter++
+		cond = strings.Replace(cond, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
+	}
+	if stmt.where != "" {
+		stmt.where += " OR " + cond
 	} else {
-		cols = strings.Join(stmt.columns, ", ")
+		stmt.where = cond
+	}
+	if len(args) > 0 {
+		newArgs := make([]any, len(args))
+		copy(newArgs, args)
+		stmt.args = append(stmt.args, newArgs...)
+	}
+	return stmt
+}
+
+// Like adds a LIKE condition to the WHERE clause.
+func (stmt *Statement) Like(col string, pattern string) *Statement {
+	stmt.argCounter++
+	cond := fmt.Sprintf("%s LIKE $%d", col, stmt.argCounter)
+	stmt.where = stmt.AddWhereClause(cond)
+	stmt.args = append(stmt.args, pattern)
+	return stmt
+}
+
+// NotLike adds a NOT LIKE condition to the WHERE clause.
+func (stmt *Statement) NotLike(col string, pattern string) *Statement {
+	stmt.argCounter++
+	cond := fmt.Sprintf("%s NOT LIKE $%d", col, stmt.argCounter)
+	stmt.where = stmt.AddWhereClause(cond)
+	stmt.args = append(stmt.args, pattern)
+	return stmt
+}
+
+// Exists adds an EXISTS subquery condition to the WHERE clause.
+func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
+	for range args {
+		stmt.argCounter++
+		subquery = strings.Replace(subquery, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
+	}
+	cond := fmt.Sprintf("EXISTS (%s)", subquery)
+	stmt.where = stmt.AddWhereClause(cond)
+	if len(args) > 0 {
+		newArgs := make([]any, len(args))
+		copy(newArgs, args)
+		stmt.args = append(stmt.args, newArgs...)
+	}
+	return stmt
+}
+
+// NotExists adds a NOT EXISTS subquery condition to the WHERE clause.
+func (stmt *Statement) NotExists(subquery string, args ...any) *Statement {
+	for range args {
+		stmt.argCounter++
+		subquery = strings.Replace(subquery, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
+	}
+	cond := fmt.Sprintf("NOT EXISTS (%s)", subquery)
+	stmt.where = stmt.AddWhereClause(cond)
+	if len(args) > 0 {
+		newArgs := make([]any, len(args))
+		copy(newArgs, args)
+		stmt.args = append(stmt.args, newArgs...)
+	}
+	return stmt
+}
+
+// Count adds a COUNT aggregate to the SELECT clause.
+func (stmt *Statement) Count(col string, alias ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, formatAggregate("COUNT", col, alias...))
+	return stmt
+}
+
+// Sum adds a SUM aggregate to the SELECT clause.
+func (stmt *Statement) Sum(col string, alias ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, formatAggregate("SUM", col, alias...))
+	return stmt
+}
+
+// Avg adds an AVG aggregate to the SELECT clause.
+func (stmt *Statement) Avg(col string, alias ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, formatAggregate("AVG", col, alias...))
+	return stmt
+}
+
+// Min adds a MIN aggregate to the SELECT clause.
+func (stmt *Statement) Min(col string, alias ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, formatAggregate("MIN", col, alias...))
+	return stmt
+}
+
+// Max adds a MAX aggregate to the SELECT clause.
+func (stmt *Statement) Max(col string, alias ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, formatAggregate("MAX", col, alias...))
+	return stmt
+}
+
+func formatAggregate(fn, col string, alias ...string) string {
+	expr := fmt.Sprintf("%s(%s)", fn, col)
+	if len(alias) > 0 && alias[0] != "" {
+		expr += " as " + alias[0]
+	}
+	return expr
+}
+
+// GenerateReadQuery builds a SELECT query from the current statement state.
+func (stmt *Statement) GenerateReadQuery(doc any) string {
+	var colParts []string
+	if len(stmt.aggregates) > 0 {
+		colParts = append(colParts, stmt.aggregates...)
+	}
+	if len(stmt.columns) > 0 && !stmt.allCols {
+		colParts = append(colParts, stmt.columns...)
+	}
+	if len(colParts) == 0 {
+		colParts = []string{"*"}
+	}
+	cols := strings.Join(colParts, ", ")
+
+	selectKeyword := "SELECT"
+	if stmt.distinct {
+		selectKeyword = "SELECT DISTINCT"
 	}
 
 	if stmt.table == "" {
-		//val := reflect.TypeOf(doc).Elem()
-		//if val.Kind() == reflect.Slice {
-		//	val.Name()
-		//	//doc = val.Index(0).Interface()
-		//}
-
 		stmt.table = GenerateTableName(doc)
 	}
 
-	query := fmt.Sprintf("SELECT %s FROM \"%s\"", cols, stmt.table)
+	query := fmt.Sprintf("%s %s FROM \"%s\"", selectKeyword, cols, stmt.table)
 
 	if stmt.where != "" {
-		query = fmt.Sprintf("%s WHERE %s;", query, stmt.where)
+		query += " WHERE " + stmt.where
+	}
+	if len(stmt.groupBy) > 0 {
+		query += " GROUP BY " + strings.Join(stmt.groupBy, ", ")
+	}
+	if stmt.having != "" {
+		query += " HAVING " + stmt.having
+	}
+	if len(stmt.orderBy) > 0 {
+		query += " ORDER BY " + strings.Join(stmt.orderBy, ", ")
+	}
+	if stmt.limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", stmt.limit)
+	}
+	if stmt.offset > 0 {
+		query += fmt.Sprintf(" OFFSET %d", stmt.offset)
 	}
 
 	return query

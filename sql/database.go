@@ -21,6 +21,23 @@ type Engine interface {
 	MustFilterCols(cols ...string) Engine
 	ShowSQL(showSQL bool) Engine
 
+	OrderBy(col string, direction ...string) Engine
+	Limit(n int64) Engine
+	Offset(n int64) Engine
+	Distinct() Engine
+	GroupBy(cols ...string) Engine
+	Having(cond string, args ...any) Engine
+	Or(cond string, args ...any) Engine
+	Like(col string, pattern string) Engine
+	NotLike(col string, pattern string) Engine
+	Exists(subquery string, args ...any) Engine
+	NotExists(subquery string, args ...any) Engine
+	Count(col string, alias ...string) Engine
+	Sum(col string, alias ...string) Engine
+	Avg(col string, alias ...string) Engine
+	Min(col string, alias ...string) Engine
+	Max(col string, alias ...string) Engine
+
 	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
 	FindMany(ctx context.Context, documents any, filter ...any) error
 

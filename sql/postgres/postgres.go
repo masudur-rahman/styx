@@ -99,6 +99,86 @@ func (pg Postgres) ShowSQL(showSQL bool) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) OrderBy(col string, direction ...string) isql.Engine {
+	pg.statement.OrderBy(col, direction...)
+	return pg
+}
+
+func (pg Postgres) Limit(n int64) isql.Engine {
+	pg.statement.Limit(n)
+	return pg
+}
+
+func (pg Postgres) Offset(n int64) isql.Engine {
+	pg.statement.Offset(n)
+	return pg
+}
+
+func (pg Postgres) Distinct() isql.Engine {
+	pg.statement.Distinct()
+	return pg
+}
+
+func (pg Postgres) GroupBy(cols ...string) isql.Engine {
+	pg.statement.GroupBy(cols...)
+	return pg
+}
+
+func (pg Postgres) Having(cond string, args ...any) isql.Engine {
+	pg.statement.Having(cond, args...)
+	return pg
+}
+
+func (pg Postgres) Or(cond string, args ...any) isql.Engine {
+	pg.statement.Or(cond, args...)
+	return pg
+}
+
+func (pg Postgres) Like(col string, pattern string) isql.Engine {
+	pg.statement.Like(col, pattern)
+	return pg
+}
+
+func (pg Postgres) NotLike(col string, pattern string) isql.Engine {
+	pg.statement.NotLike(col, pattern)
+	return pg
+}
+
+func (pg Postgres) Exists(subquery string, args ...any) isql.Engine {
+	pg.statement.Exists(subquery, args...)
+	return pg
+}
+
+func (pg Postgres) NotExists(subquery string, args ...any) isql.Engine {
+	pg.statement.NotExists(subquery, args...)
+	return pg
+}
+
+func (pg Postgres) Count(col string, alias ...string) isql.Engine {
+	pg.statement.Count(col, alias...)
+	return pg
+}
+
+func (pg Postgres) Sum(col string, alias ...string) isql.Engine {
+	pg.statement.Sum(col, alias...)
+	return pg
+}
+
+func (pg Postgres) Avg(col string, alias ...string) isql.Engine {
+	pg.statement.Avg(col, alias...)
+	return pg
+}
+
+func (pg Postgres) Min(col string, alias ...string) isql.Engine {
+	pg.statement.Min(col, alias...)
+	return pg
+}
+
+func (pg Postgres) Max(col string, alias ...string) isql.Engine {
+	pg.statement.Max(col, alias...)
+	return pg
+}
+
 func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bool, error) {
 	pg.statement.GenerateWhereClause(filter...)
 

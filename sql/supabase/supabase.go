@@ -75,7 +75,70 @@ func (s Supabase) MustFilterCols(cols ...string) isql.Engine {
 }
 
 func (s Supabase) ShowSQL(showSQL bool) isql.Engine {
-	//TODO implement me
+	panic("implement me")
+}
+
+func (s Supabase) OrderBy(col string, direction ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Limit(n int64) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Offset(n int64) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Distinct() isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) GroupBy(cols ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Having(cond string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Or(cond string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Like(col string, pattern string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) NotLike(col string, pattern string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Exists(subquery string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) NotExists(subquery string, args ...any) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Count(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Sum(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Avg(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Min(col string, alias ...string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Max(col string, alias ...string) isql.Engine {
 	panic("implement me")
 }
 
