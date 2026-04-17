@@ -324,6 +324,10 @@ func (d Database) Sync(ctx context.Context, tables ...any) error {
 	return dberr.ErrTransactionNotStarted
 }
 
+func (d Database) DropTable(ctx context.Context, name string) error {
+	panic("implement me")
+}
+
 func (d Database) Close() error {
 	return nil
 }

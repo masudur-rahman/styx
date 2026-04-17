@@ -438,6 +438,10 @@ func (sq SQLite) Sync(ctx context.Context, tables ...any) error {
 	return nil
 }
 
+func (sq SQLite) DropTable(ctx context.Context, name string) error {
+	return lib.DropTable(ctx, sq.conn, name)
+}
+
 func (sq SQLite) Close() error {
 	return sq.conn.Close()
 }

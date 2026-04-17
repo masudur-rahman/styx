@@ -263,4 +263,8 @@ func (s Supabase) Sync(ctx context.Context, tables ...any) error {
 	panic("implement me")
 }
 
+func (s Supabase) DropTable(ctx context.Context, name string) error {
+	panic("implement me")
+}
+
 func (s Supabase) Close() error { return nil }

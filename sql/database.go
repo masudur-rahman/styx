@@ -58,6 +58,7 @@ type Engine interface {
 	Exec(ctx context.Context, query string, args ...any) (sql.Result, error)
 
 	Sync(ctx context.Context, tables ...any) error
+	DropTable(ctx context.Context, name string) error
 
 	Close() error
 }

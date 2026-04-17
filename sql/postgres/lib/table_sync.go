@@ -457,6 +457,98 @@ func contains(slice []string, val string) bool {
 	return false
 }
 
+// indexInfo holds parsed index metadata from struct tags.
+type indexInfo struct {
+	Name   string
+	Cols   []string
+	Unique bool
+}
+
+// extractIndexes parses idx and unique_idx tags from a struct type.
+func extractIndexes(table any) []indexInfo {
+	tableType := reflect.TypeOf(table)
+	if tableType.Kind() == reflect.Ptr {
+		tableType = tableType.Elem()
+	}
+	if tableType.Kind() != reflect.Struct {
+		return nil
+	}
+
+	named := map[string]*indexInfo{}
+	var unnamed []indexInfo
+
+	for i := 0; i < tableType.NumField(); i++ {
+		field := tableType.Field(i)
+		dbTag := field.Tag.Get("db")
+		if dbTag == "" {
+			continue
+		}
+		parts := strings.SplitN(dbTag, ",", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		colName := parts[0]
+		if colName == "" {
+			colName = strcase.ToSnake(field.Name)
+		}
+
+		for _, part := range strings.Fields(parts[1]) {
+			lp := strings.ToLower(part)
+			if lp == "idx" {
+				unnamed = append(unnamed, indexInfo{Cols: []string{colName}})
+			} else if lp == "unique_idx" {
+				unnamed = append(unnamed, indexInfo{Cols: []string{colName}, Unique: true})
+			} else if strings.HasPrefix(lp, "idx:") {
+				idxName := strings.TrimPrefix(lp, "idx:")
+				if existing, ok := named[idxName]; ok {
+					existing.Cols = append(existing.Cols, colName)
+				} else {
+					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}}
+				}
+			} else if strings.HasPrefix(lp, "unique_idx:") {
+				idxName := strings.TrimPrefix(lp, "unique_idx:")
+				if existing, ok := named[idxName]; ok {
+					existing.Cols = append(existing.Cols, colName)
+				} else {
+					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}, Unique: true}
+				}
+			}
+		}
+	}
+
+	var result []indexInfo
+	for _, idx := range named {
+		result = append(result, *idx)
+	}
+	return append(result, unnamed...)
+}
+
+func createIndexes(ctx context.Context, conn *sql.DB, tableName string, indexes []indexInfo) error {
+	for i, idx := range indexes {
+		unique := ""
+		if idx.Unique {
+			unique = "UNIQUE "
+		}
+		name := idx.Name
+		if name == "" {
+			name = fmt.Sprintf("idx_%s_%d", tableName, i)
+		}
+		query := fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS \"%s\" ON \"%s\" (%s)",
+			unique, name, tableName, strings.Join(idx.Cols, ", "))
+		if _, err := ExecuteWriteQuery(ctx, query, conn); err != nil {
+			return fmt.Errorf("error creating index %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// DropTable drops a table by name.
+func DropTable(ctx context.Context, conn *sql.DB, tableName string) error {
+	query := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
+	_, err := ExecuteWriteQuery(ctx, query, conn)
+	return err
+}
+
 func SyncTable(ctx context.Context, conn *sql.DB, table any) error {
 	tableName := GenerateTableName(table)
 	fields, err := getTableInfo(table)
@@ -474,9 +566,14 @@ func SyncTable(ctx context.Context, conn *sql.DB, table any) error {
 		if err = addMissingColumns(ctx, conn, tableName, fields); err != nil {
 			return err
 		}
-		//if err = updateUniqueCompositeConstraints(ctx, p.conn, tableName); err != nil {
-		//	return err
-		//}
 	}
+
+	indexes := extractIndexes(table)
+	if len(indexes) > 0 {
+		if err = createIndexes(ctx, conn, tableName, indexes); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

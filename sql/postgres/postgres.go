@@ -436,6 +436,10 @@ func (pg Postgres) Sync(ctx context.Context, tables ...any) error {
 	return nil
 }
 
+func (pg Postgres) DropTable(ctx context.Context, name string) error {
+	return lib.DropTable(ctx, pg.conn, name)
+}
+
 func (pg Postgres) Close() error {
 	return pg.conn.Close()
 }
