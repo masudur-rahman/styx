@@ -35,6 +35,8 @@ func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
 	assert.Contains(t, query, "email")
 	assert.NotContains(t, query, "score")
 	assert.NotContains(t, query, "id")
+	assert.Contains(t, query, "$1")
+	assert.Equal(t, []any{"alice", "alice@test.com"}, stmt.args)
 }
 
 func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
@@ -45,6 +47,7 @@ func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
 
 	assert.Contains(t, query, "name")
 	assert.Contains(t, query, "score")
+	assert.Contains(t, query, "$1")
 }
 
 func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {

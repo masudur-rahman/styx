@@ -85,7 +85,7 @@ func (stmt *Statement) Where(cond string, args ...any) *Statement {
 }
 
 func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
-	stmt.where = stmt.AddWhereClause(GenerateWhereClauseFromID(stmt.id))
+	stmt.where = stmt.AddWhereClause(stmt.generateWhereClauseFromID())
 	if len(filter) > 0 {
 		stmt.where = stmt.AddWhereClause(stmt.GenerateWhereClauseFromFilter(filter[0]))
 	}
@@ -505,7 +505,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
 		rvalue = rvalue.Elem()
 	}
-	var cols, values []string
+	var cols, placeholders []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
 		col := getFieldName(field)
@@ -514,20 +514,18 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 			continue
 		}
 
-		value := formatValues(rvalue.Field(idx).Interface())
+		stmt.argCounter++
 		cols = append(cols, col)
-		values = append(values, value)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", stmt.argCounter))
+		stmt.args = append(stmt.args, rvalue.Field(idx).Interface())
 	}
 
 	if stmt.table == "" {
 		stmt.table = GenerateTableName(doc)
 	}
 
-	colClause := strings.Join(cols, ", ")
-	valClause := strings.Join(values, ", ")
-	query := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", stmt.table, colClause, valClause)
-
-	return query
+	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
+		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 }
 
 func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
@@ -581,11 +579,14 @@ func (stmt *Statement) generateMustFilterColMap() map[string]bool {
 
 func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	stmt.mustColMap = stmt.generateMustColMap()
-	var setValues []string
+	var setCols []string
+	var setArgs []any
 	rvalue := reflect.ValueOf(doc)
 	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
 		rvalue = rvalue.Elem()
 	}
+	// Collect SET fields with fresh $1, $2, ... numbering
+	freshCounter := 0
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
 		col := getFieldName(field)
@@ -594,18 +595,28 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 			continue
 		}
 
-		value := formatValues(rvalue.Field(idx).Interface())
-		setValue := fmt.Sprintf("%s = %s", col, value)
-		setValues = append(setValues, setValue)
+		freshCounter++
+		setCols = append(setCols, fmt.Sprintf("%s = $%d", col, freshCounter))
+		setArgs = append(setArgs, rvalue.Field(idx).Interface())
 	}
 
 	if stmt.table == "" {
 		stmt.table = GenerateTableName(doc)
 	}
 
-	setClause := strings.Join(setValues, ", ")
-	query := fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s", stmt.table, setClause, stmt.where)
-	return query
+	// Renumber existing WHERE placeholders ($1...$n → $(freshCounter+1)...$(freshCounter+n))
+	for i := stmt.argCounter; i >= 1; i-- {
+		stmt.where = strings.ReplaceAll(stmt.where,
+			fmt.Sprintf("$%d", i),
+			fmt.Sprintf("$%d", i+freshCounter))
+	}
+
+	// SET args before WHERE args so SQL argument order matches
+	stmt.args = append(setArgs, stmt.args...)
+	stmt.argCounter = freshCounter + stmt.argCounter
+
+	return fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s",
+		stmt.table, strings.Join(setCols, ", "), stmt.where)
 }
 
 func (stmt *Statement) GenerateDeleteQuery() string {

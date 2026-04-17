@@ -21,9 +21,8 @@ type Statement struct {
 	mustFilterCols   []string
 	mustFilterColMap map[string]bool
 	where            string
-	args             []any
-	argCounter       int
-	showSQL          bool
+	args    []any
+	showSQL bool
 	pkColumn         string
 	orderBy          []string
 	limit            int64
@@ -58,11 +57,9 @@ func (stmt *Statement) In(col string, values ...any) *Statement {
 		stmt.where += " AND "
 	}
 
-	// Use parameterized placeholders instead of direct string formatting
 	placeholders := make([]string, len(values))
 	for i := range values {
-		stmt.argCounter++
-		placeholders[i] = fmt.Sprintf("$%d", stmt.argCounter)
+		placeholders[i] = "?"
 	}
 	stmt.args = append(stmt.args, values...)
 	stmt.where += fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ", "))
@@ -70,13 +67,8 @@ func (stmt *Statement) In(col string, values ...any) *Statement {
 }
 
 func (stmt *Statement) Where(cond string, args ...any) *Statement {
-	for range args {
-		stmt.argCounter++
-		cond = strings.Replace(cond, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
-	}
 	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
-		// Create a new slice to avoid sharing underlying array
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
 		stmt.args = append(stmt.args, newArgs...)
@@ -85,7 +77,7 @@ func (stmt *Statement) Where(cond string, args ...any) *Statement {
 }
 
 func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
-	stmt.where = stmt.AddWhereClause(GenerateWhereClauseFromID(stmt.id))
+	stmt.where = stmt.AddWhereClause(stmt.generateWhereClauseFromID())
 	if len(filter) > 0 {
 		stmt.where = stmt.AddWhereClause(stmt.GenerateWhereClauseFromFilter(filter[0]))
 	}
@@ -176,10 +168,6 @@ func (stmt *Statement) GroupBy(cols ...string) *Statement {
 
 // Having sets the HAVING clause for GROUP BY filtering.
 func (stmt *Statement) Having(cond string, args ...any) *Statement {
-	for range args {
-		stmt.argCounter++
-		cond = strings.Replace(cond, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
-	}
 	stmt.having = cond
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
@@ -191,10 +179,6 @@ func (stmt *Statement) Having(cond string, args ...any) *Statement {
 
 // Or adds an OR condition to the WHERE clause.
 func (stmt *Statement) Or(cond string, args ...any) *Statement {
-	for range args {
-		stmt.argCounter++
-		cond = strings.Replace(cond, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
-	}
 	if stmt.where != "" {
 		stmt.where += " OR " + cond
 	} else {
@@ -210,30 +194,21 @@ func (stmt *Statement) Or(cond string, args ...any) *Statement {
 
 // Like adds a LIKE condition to the WHERE clause.
 func (stmt *Statement) Like(col string, pattern string) *Statement {
-	stmt.argCounter++
-	cond := fmt.Sprintf("%s LIKE $%d", col, stmt.argCounter)
-	stmt.where = stmt.AddWhereClause(cond)
+	stmt.where = stmt.AddWhereClause(fmt.Sprintf("%s LIKE ?", col))
 	stmt.args = append(stmt.args, pattern)
 	return stmt
 }
 
 // NotLike adds a NOT LIKE condition to the WHERE clause.
 func (stmt *Statement) NotLike(col string, pattern string) *Statement {
-	stmt.argCounter++
-	cond := fmt.Sprintf("%s NOT LIKE $%d", col, stmt.argCounter)
-	stmt.where = stmt.AddWhereClause(cond)
+	stmt.where = stmt.AddWhereClause(fmt.Sprintf("%s NOT LIKE ?", col))
 	stmt.args = append(stmt.args, pattern)
 	return stmt
 }
 
 // Exists adds an EXISTS subquery condition to the WHERE clause.
 func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
-	for range args {
-		stmt.argCounter++
-		subquery = strings.Replace(subquery, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
-	}
-	cond := fmt.Sprintf("EXISTS (%s)", subquery)
-	stmt.where = stmt.AddWhereClause(cond)
+	stmt.where = stmt.AddWhereClause(fmt.Sprintf("EXISTS (%s)", subquery))
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
@@ -244,12 +219,7 @@ func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
 
 // NotExists adds a NOT EXISTS subquery condition to the WHERE clause.
 func (stmt *Statement) NotExists(subquery string, args ...any) *Statement {
-	for range args {
-		stmt.argCounter++
-		subquery = strings.Replace(subquery, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
-	}
-	cond := fmt.Sprintf("NOT EXISTS (%s)", subquery)
-	stmt.where = stmt.AddWhereClause(cond)
+	stmt.where = stmt.AddWhereClause(fmt.Sprintf("NOT EXISTS (%s)", subquery))
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
@@ -341,10 +311,6 @@ func (stmt *Statement) InnerJoin(table string, on string, args ...any) *Statemen
 }
 
 func (stmt *Statement) addJoin(joinType, table, on string, args ...any) *Statement {
-	for range args {
-		stmt.argCounter++
-		on = strings.Replace(on, "?", fmt.Sprintf("$%d", stmt.argCounter), 1)
-	}
 	stmt.joins = append(stmt.joins, fmt.Sprintf("%s \"%s\" ON %s", joinType, table, on))
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
@@ -501,7 +467,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
 		rvalue = rvalue.Elem()
 	}
-	var cols, values []string
+	var cols []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
 		col := getFieldName(field)
@@ -510,20 +476,21 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 			continue
 		}
 
-		value := formatValues(rvalue.Field(idx).Interface())
 		cols = append(cols, col)
-		values = append(values, value)
+		stmt.args = append(stmt.args, rvalue.Field(idx).Interface())
 	}
 
 	if stmt.table == "" {
 		stmt.table = GenerateTableName(doc)
 	}
 
-	colClause := strings.Join(cols, ", ")
-	valClause := strings.Join(values, ", ")
-	query := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)", stmt.table, colClause, valClause)
+	placeholders := make([]string, len(cols))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
 
-	return query
+	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
+		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 }
 
 func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
@@ -578,7 +545,8 @@ func (stmt *Statement) generateMustFilterColMap() map[string]bool {
 
 func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	stmt.mustColMap = stmt.generateMustColMap()
-	var setValues []string
+	var setCols []string
+	var setArgs []any
 	rvalue := reflect.ValueOf(doc)
 	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
 		rvalue = rvalue.Elem()
@@ -591,18 +559,19 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 			continue
 		}
 
-		value := formatValues(rvalue.Field(idx).Interface())
-		setValue := fmt.Sprintf("%s = %s", col, value)
-		setValues = append(setValues, setValue)
+		setCols = append(setCols, col+" = ?")
+		setArgs = append(setArgs, rvalue.Field(idx).Interface())
 	}
 
 	if stmt.table == "" {
 		stmt.table = GenerateTableName(doc)
 	}
 
-	setClause := strings.Join(setValues, ", ")
-	query := fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s", stmt.table, setClause, stmt.where)
-	return query
+	// SET args go before WHERE args in the driver call
+	stmt.args = append(setArgs, stmt.args...)
+
+	return fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s",
+		stmt.table, strings.Join(setCols, ", "), stmt.where)
 }
 
 func (stmt *Statement) GenerateDeleteQuery() string {

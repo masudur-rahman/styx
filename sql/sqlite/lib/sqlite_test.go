@@ -35,6 +35,8 @@ func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
 	assert.Contains(t, query, "email")
 	assert.NotContains(t, query, "score")
 	assert.NotContains(t, query, "id")
+	assert.Contains(t, query, "?")
+	assert.Equal(t, []any{"alice", "alice@test.com"}, stmt.args)
 }
 
 func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
@@ -45,6 +47,7 @@ func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
 
 	assert.Contains(t, query, "name")
 	assert.Contains(t, query, "score")
+	assert.Contains(t, query, "?")
 }
 
 type whereTestDoc struct {
@@ -62,6 +65,7 @@ func TestGenerateWhereClauseFromFilter_skipsZeroValues(t *testing.T) {
 	assert.Contains(t, clause, "user_id")
 	assert.NotContains(t, clause, "category_id")
 	assert.NotContains(t, clause, "score")
+	assert.Equal(t, []any{int64(99)}, stmt.args)
 }
 
 func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroString(t *testing.T) {
@@ -70,9 +74,10 @@ func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroString(t *testi
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
 
-	assert.Contains(t, clause, "user_id=99")
-	assert.Contains(t, clause, "category_id=''")
+	assert.Contains(t, clause, "user_id = ?")
+	assert.Contains(t, clause, "category_id = ?")
 	assert.NotContains(t, clause, "score")
+	assert.Equal(t, []any{int64(99), ""}, stmt.args)
 }
 
 func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroInt(t *testing.T) {
@@ -81,9 +86,10 @@ func TestGenerateWhereClauseFromFilter_mustFilterColsIncludesZeroInt(t *testing.
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
 
-	assert.Contains(t, clause, "user_id=99")
-	assert.Contains(t, clause, "score=0")
+	assert.Contains(t, clause, "user_id = ?")
+	assert.Contains(t, clause, "score = ?")
 	assert.NotContains(t, clause, "category_id")
+	assert.Equal(t, []any{int64(99), 0}, stmt.args)
 }
 
 type reqTestDoc struct {
@@ -99,10 +105,11 @@ func TestGenerateWhereClauseFromFilter_reqTagIncludesZeroValues(t *testing.T) {
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
 
-	assert.Contains(t, clause, "user_id=99")
-	assert.Contains(t, clause, "category_id=''")
-	assert.Contains(t, clause, "alert_at=0")
+	assert.Contains(t, clause, "user_id = ?")
+	assert.Contains(t, clause, "category_id = ?")
+	assert.Contains(t, clause, "alert_at = ?")
 	assert.NotContains(t, clause, "score")
+	assert.Equal(t, []any{int64(99), "", int64(0)}, stmt.args)
 }
 
 func TestGenerateInsertQuery_reqTagIncludesZeroValues(t *testing.T) {
@@ -115,6 +122,7 @@ func TestGenerateInsertQuery_reqTagIncludesZeroValues(t *testing.T) {
 	assert.Contains(t, query, "category_id")
 	assert.Contains(t, query, "alert_at")
 	assert.NotContains(t, query, "score")
+	assert.Contains(t, query, "?")
 }
 
 func TestGenerateUpdateQuery_reqTagIncludesZeroValues(t *testing.T) {
@@ -123,9 +131,14 @@ func TestGenerateUpdateQuery_reqTagIncludesZeroValues(t *testing.T) {
 
 	query := stmt.GenerateUpdateQuery(doc)
 
-	assert.Contains(t, query, "category_id = ''")
-	assert.Contains(t, query, "alert_at = 0")
+	assert.Contains(t, query, "category_id = ?")
+	assert.Contains(t, query, "alert_at = ?")
 	assert.NotContains(t, query, "score")
+	// SET args come before WHERE args in driver call
+	assert.Equal(t, int64(1), stmt.args[0])                // user_id SET value
+	assert.Equal(t, "", stmt.args[1])                       // category_id SET value
+	assert.Equal(t, int64(0), stmt.args[2])                 // alert_at SET value
+	assert.Equal(t, 1, stmt.args[len(stmt.args)-1])         // WHERE arg last
 }
 
 func TestGenerateWhereClauseFromFilter_noReqTag_skipsZero(t *testing.T) {
@@ -134,7 +147,7 @@ func TestGenerateWhereClauseFromFilter_noReqTag_skipsZero(t *testing.T) {
 
 	clause := stmt.GenerateWhereClauseFromFilter(filter)
 
-	assert.Contains(t, clause, "user_id=99")
+	assert.Contains(t, clause, "user_id = ?")
 	assert.NotContains(t, clause, "category_id")
 	assert.NotContains(t, clause, "score")
 }

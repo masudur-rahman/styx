@@ -108,13 +108,15 @@ func HandleSliceAny(v []any) string {
 	return value
 }
 
-func GenerateWhereClauseFromID(id any) string {
-	if IsZeroValue(id) {
+// generateWhereClauseFromID builds a parameterized WHERE condition from stmt.id.
+func (stmt *Statement) generateWhereClauseFromID() string {
+	if IsZeroValue(stmt.id) {
 		return ""
 	}
-
-	col, value := toColumnValue("id", id)
-	return strings.Join([]string{col, value}, "=")
+	col := toDBFieldName("id")
+	stmt.argCounter++
+	stmt.args = append(stmt.args, stmt.id)
+	return fmt.Sprintf("%s = $%d", col, stmt.argCounter)
 }
 
 // GenerateWhereClauseFromFilter builds WHERE conditions from a struct filter.
@@ -132,9 +134,9 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 			continue
 		}
 
-		value := formatValues(val.Field(idx).Interface())
-		condition := strings.Join([]string{col, value}, "=")
-		conditions = append(conditions, condition)
+		stmt.argCounter++
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, stmt.argCounter))
+		stmt.args = append(stmt.args, val.Field(idx).Interface())
 	}
 	return strings.Join(conditions, " AND ")
 }
