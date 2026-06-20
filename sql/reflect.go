@@ -267,11 +267,36 @@ func ScanRow(rows *sql.Rows, doc any) error {
 					field.Set(reflect.ValueOf(t))
 				}
 			}
+		} else if field.Kind() == reflect.Bool {
+			// SQLite stores BOOLEAN as INTEGER, so the driver returns int64;
+			// int64 is not ConvertibleTo bool, so convert explicitly.
+			field.SetBool(asBool(rawVal))
 		} else if v.Type().ConvertibleTo(field.Type()) {
 			field.Set(v.Convert(field.Type()))
 		}
 	}
 	return nil
+}
+
+// asBool coerces a scanned SQL value into a Go bool. SQLite returns BOOLEAN
+// columns as int64; other drivers may return bool, []byte or string.
+func asBool(v any) bool {
+	switch n := v.(type) {
+	case bool:
+		return n
+	case int64:
+		return n != 0
+	case int:
+		return n != 0
+	case float64:
+		return n != 0
+	case []byte:
+		return len(n) > 0 && (n[0] == '1' || n[0] == 't' || n[0] == 'T')
+	case string:
+		return n == "1" || n == "true" || n == "TRUE" || n == "True" || n == "t"
+	default:
+		return false
+	}
 }
 
 func parseTime(s string) (time.Time, error) {
