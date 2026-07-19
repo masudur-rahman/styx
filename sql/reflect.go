@@ -2,6 +2,7 @@ package sql
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/iancoleman/strcase"
 )
+
+var rawMessageType = reflect.TypeOf(json.RawMessage{})
 
 var (
 	fieldMapCache  sync.Map // map[reflect.Type]map[string]int (index of field)
@@ -190,6 +193,109 @@ func HasReqTag(field reflect.StructField) bool {
 	return false
 }
 
+// HasJSONTag checks if a struct field has the "json" option in its db tag.
+func HasJSONTag(field reflect.StructField) bool {
+	dbTag := field.Tag.Get("db")
+	if dbTag == "" {
+		return false
+	}
+	parts := strings.SplitN(dbTag, ",", 2)
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range strings.Fields(parts[1]) {
+		if strings.ToUpper(part) == "JSON" {
+			return true
+		}
+	}
+	return false
+}
+
+// IsJSONField reports whether a struct field is stored as JSON in the
+// database: either tagged with the "json" db option, or typed
+// json.RawMessage (directly or behind a pointer).
+func IsJSONField(field reflect.StructField) bool {
+	if HasJSONTag(field) {
+		return true
+	}
+	t := field.Type
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t == rawMessageType
+}
+
+// SQLArgValue returns the driver argument for a struct field value. JSON
+// fields are passed as their textual form: drivers like lib/pq encode
+// []byte as bytea, which JSON/JSONB columns reject, so raw bytes are
+// converted to string and other values are marshaled.
+func SQLArgValue(field reflect.StructField, value reflect.Value) any {
+	if !IsJSONField(field) {
+		return value.Interface()
+	}
+
+	v := value
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if v.Type() == rawMessageType {
+		raw := v.Bytes()
+		if len(raw) == 0 {
+			return nil
+		}
+		return string(raw)
+	}
+
+	data, err := json.Marshal(v.Interface())
+	if err != nil {
+		// Pass the original value through; the driver will surface the error.
+		return value.Interface()
+	}
+	return string(data)
+}
+
+// setJSONField assigns a scanned JSON column value onto a struct field,
+// unmarshaling into typed fields and copying raw bytes for json.RawMessage
+// (drivers may reuse the scan buffer).
+func setJSONField(field reflect.Value, rawVal any) error {
+	var data []byte
+	switch v := rawVal.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return fmt.Errorf("cannot scan %T into JSON field", rawVal)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	cp := append([]byte(nil), data...)
+
+	t := field.Type()
+	switch {
+	case t == rawMessageType:
+		field.Set(reflect.ValueOf(json.RawMessage(cp)))
+		return nil
+	case t.Kind() == reflect.Ptr && t.Elem() == rawMessageType:
+		rm := json.RawMessage(cp)
+		field.Set(reflect.ValueOf(&rm))
+		return nil
+	case t.Kind() == reflect.Ptr:
+		nv := reflect.New(t.Elem())
+		if err := json.Unmarshal(cp, nv.Interface()); err != nil {
+			return err
+		}
+		field.Set(nv)
+		return nil
+	default:
+		return json.Unmarshal(cp, field.Addr().Interface())
+	}
+}
+
 // IsZeroValue checks if a value is its type's zero value.
 func IsZeroValue(value any) bool {
 	if value == nil {
@@ -233,6 +339,13 @@ func ScanRow(rows *sql.Rows, doc any) error {
 
 		field := val.Field(fieldIdx)
 		if !field.CanSet() {
+			continue
+		}
+
+		if IsJSONField(val.Type().Field(fieldIdx)) {
+			if err := setJSONField(field, rawVal); err != nil {
+				return err
+			}
 			continue
 		}
 

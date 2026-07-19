@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -60,4 +61,54 @@ func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
 	assert.Contains(t, query, "name")
 	assert.Contains(t, query, "email")
 	assert.Contains(t, query, "score")
+}
+
+type jsonAddress struct {
+	Street string `json:"street"`
+	City   string `json:"city"`
+}
+
+type jsonTestDoc struct {
+	ID      int64           `db:"id,pk autoincr"`
+	Name    string          `db:"name"`
+	Payload json.RawMessage `db:"payload"`
+	Address jsonAddress     `db:"address,json"`
+	Blob    []byte          `db:"blob"`
+}
+
+func TestCreateTableQuery_jsonColumns(t *testing.T) {
+	fields, err := getTableInfo(jsonTestDoc{})
+	assert.NoError(t, err)
+
+	query := createTableQuery("json_test_doc", fields)
+
+	assert.Contains(t, query, "payload JSONB")
+	assert.Contains(t, query, "address JSONB")
+	assert.Contains(t, query, "blob BYTEA")
+	assert.NotContains(t, query, ", ,", "no field may end up without a SQL type")
+}
+
+func TestGenerateInsertQuery_jsonArgsAsText(t *testing.T) {
+	stmt := new(Statement).Table("json_test_doc")
+	doc := jsonTestDoc{
+		Name:    "alice",
+		Payload: json.RawMessage(`{"a":1}`),
+		Address: jsonAddress{Street: "Road 1", City: "Dhaka"},
+	}
+
+	query := stmt.GenerateInsertQuery(doc)
+
+	assert.Contains(t, query, "payload")
+	assert.Contains(t, query, "address")
+	assert.Equal(t, []any{"alice", `{"a":1}`, `{"street":"Road 1","city":"Dhaka"}`}, stmt.args)
+}
+
+func TestGenerateUpdateQuery_jsonArgsAsText(t *testing.T) {
+	stmt := new(Statement).Table("json_test_doc").Where("id = ?", 7)
+	doc := jsonTestDoc{Payload: json.RawMessage(`{"b":2}`)}
+
+	query := stmt.GenerateUpdateQuery(doc)
+
+	assert.Contains(t, query, "payload = $1")
+	assert.Equal(t, []any{`{"b":2}`, 7}, stmt.args)
 }

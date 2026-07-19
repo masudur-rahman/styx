@@ -115,7 +115,7 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 
 		stmt.argCounter++
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, stmt.argCounter))
-		stmt.args = append(stmt.args, val.Field(idx).Interface())
+		stmt.args = append(stmt.args, isql.SQLArgValue(field, val.Field(idx)))
 	}
 
 	return strings.Join(conditions, " AND ")
@@ -552,7 +552,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 		stmt.argCounter++
 		cols = append(cols, col)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", stmt.argCounter))
-		stmt.args = append(stmt.args, rvalue.Field(idx).Interface())
+		stmt.args = append(stmt.args, isql.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
 	if stmt.table == "" {
@@ -632,7 +632,7 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 
 		freshCounter++
 		setCols = append(setCols, fmt.Sprintf("%s = $%d", col, freshCounter))
-		setArgs = append(setArgs, rvalue.Field(idx).Interface())
+		setArgs = append(setArgs, isql.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
 	if stmt.table == "" {

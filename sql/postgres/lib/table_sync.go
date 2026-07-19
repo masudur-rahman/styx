@@ -70,7 +70,7 @@ func addMissingColumns(ctx context.Context, conn *sql.DB, tableName string, fiel
 		alterQuery := generateAddColumnQuery(tableName, missingColumns)
 		_, err = ExecuteWriteQuery(ctx, alterQuery, conn)
 		if err != nil {
-			return err
+			return fmt.Errorf("error adding columns to table %s: %v (query: %s)", tableName, err, alterQuery)
 		}
 	}
 	return nil
@@ -83,6 +83,9 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 		columnConstraint = " " + columnConstraint
 	}
 	sqlType := getSQLType(fieldValue.Type(), autoincr)
+	if isql.IsJSONField(fieldType) {
+		sqlType = "JSONB"
+	}
 	return fieldInfo{
 		Name:        fieldName,
 		Type:        sqlType + columnConstraint,
@@ -112,6 +115,8 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 					autoincr = true
 				case "REQ":
 					// handled at query generation time, no DDL effect
+				case "JSON":
+					// column type handled in getFieldInfo, no constraint
 				}
 			}
 		}
@@ -246,6 +251,10 @@ func getSQLType(fieldType reflect.Type, autoincr bool) string {
 		return "BOOLEAN"
 	case reflect.String:
 		return "VARCHAR(255)"
+	case reflect.Slice:
+		if fieldType.Elem().Kind() == reflect.Uint8 {
+			return "BYTEA"
+		}
 	case reflect.Struct:
 		if fieldType == reflect.TypeOf(time.Time{}) {
 			return "TIMESTAMP WITH TIME ZONE"

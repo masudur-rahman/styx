@@ -83,6 +83,10 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 		columnConstraint = " " + columnConstraint
 	}
 	sqlType := getSQLType(fieldValue.Type(), autoincr)
+	if isql.IsJSONField(fieldType) {
+		// SQLite stores JSON as TEXT
+		sqlType = "TEXT"
+	}
 	return fieldInfo{
 		Name:        fieldName,
 		Type:        removeDuplicateKeyword(sqlType + columnConstraint),
@@ -121,6 +125,8 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 					autoincr = true
 				case "REQ":
 					// handled at query generation time, no DDL effect
+				case "JSON":
+					// column type handled in getFieldInfo, no constraint
 				}
 			}
 		}
@@ -393,6 +399,10 @@ func getSQLType(fieldType reflect.Type, autoincr bool) string {
 		return "BOOLEAN"
 	case reflect.String:
 		return "TEXT"
+	case reflect.Slice:
+		if fieldType.Elem().Kind() == reflect.Uint8 {
+			return "BLOB"
+		}
 	case reflect.Struct:
 		if fieldType == reflect.TypeOf(time.Time{}) {
 			return "DATETIME"

@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -112,4 +113,55 @@ func TestIntegration_AllFeatures(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, statsList)
 	assert.Equal(t, 15.0, statsList[0].AvgAge)
+}
+
+type Location struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+type Event struct {
+	ID       int64           `db:"id,pk autoincr"`
+	Name     string          `db:"name"`
+	Payload  json.RawMessage `db:"payload"`
+	Location Location        `db:"location,json"`
+	Extra    *Location       `db:"extra,json"`
+}
+
+func TestIntegration_JSONFields(t *testing.T) {
+	ctx := context.Background()
+	conn, err := lib.GetSQLiteConnection(":memory:")
+	assert.NoError(t, err)
+	db := sqlite.NewSQLite(conn)
+	assert.NoError(t, db.Sync(ctx, Event{}))
+
+	ev := &Event{
+		Name:     "visit",
+		Payload:  json.RawMessage(`{"note":"first"}`),
+		Location: Location{Lat: 23.8, Lon: 90.4},
+	}
+	_, err = db.InsertOne(ctx, ev)
+	assert.NoError(t, err)
+
+	// Round-trip: RawMessage and json-tagged struct come back intact
+	var got Event
+	found, err := db.Table("event").ID(1).FindOne(ctx, &got)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.JSONEq(t, `{"note":"first"}`, string(got.Payload))
+	assert.Equal(t, Location{Lat: 23.8, Lon: 90.4}, got.Location)
+	assert.Nil(t, got.Extra, "NULL column stays nil pointer")
+
+	// Update through the json path
+	err = db.Table("event").ID(1).UpdateOne(ctx, Event{
+		Payload: json.RawMessage(`{"note":"second"}`),
+		Extra:   &Location{Lat: 1, Lon: 2},
+	})
+	assert.NoError(t, err)
+
+	var updated Event
+	_, err = db.Table("event").ID(1).FindOne(ctx, &updated)
+	assert.NoError(t, err)
+	assert.JSONEq(t, `{"note":"second"}`, string(updated.Payload))
+	assert.Equal(t, &Location{Lat: 1, Lon: 2}, updated.Extra)
 }

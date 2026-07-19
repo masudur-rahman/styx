@@ -86,6 +86,7 @@ db:"column_name,options"
 | `uq`       | Unique constraint (single column)| Adds `UNIQUE` constraint                         | -            |
 | `uqs`      | Unique composite group           | Adds composite `UNIQUE(col1, col2, ...)` across all `uqs` fields | -            |
 | `req`      | Required (never skip zero-value) | None                                             | Always includes the field in WHERE, INSERT, and UPDATE queries, even when zero-valued |
+| `json`     | Store field as JSON              | `JSONB` (Postgres) / `TEXT` (SQLite)             | Marshals the field on writes, unmarshals on reads |
 
 ### Examples
 
@@ -97,6 +98,26 @@ type Budget struct {
 	AlertAt    int64  `db:"alert_at,req"`        // required: always included even when 0
 	Amount     int64  `db:"amount"`              // regular field, skipped when zero
 	Label      string `db:"label,uq"`           // single-column unique constraint
+	Meta       Detail `db:"meta,json"`          // any struct/map/slice stored as JSON
+}
+```
+
+### JSON Columns
+
+Fields typed `json.RawMessage` are stored as JSON automatically — no tag
+needed. Any other type (struct, map, slice) can opt in with the `json`
+option; Styx marshals it on INSERT/UPDATE and unmarshals it when scanning
+rows. `nil` pointers and empty `json.RawMessage` values are stored as
+`NULL`. Plain `[]byte` fields (without the tag) map to `BYTEA`/`BLOB`
+instead.
+
+```go
+type Clinic struct {
+	ID      int64           `db:"id,pk autoincr"`
+	Name    string          `db:"name"`
+	FHIR    json.RawMessage `db:"fhir_json"`     // JSONB automatically
+	Address Address         `db:"address,json"`  // marshaled/unmarshaled by Styx
+	Photo   []byte          `db:"photo"`         // BYTEA/BLOB, not JSON
 }
 ```
 
