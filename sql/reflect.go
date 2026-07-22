@@ -13,6 +13,7 @@ import (
 )
 
 var rawMessageType = reflect.TypeOf(json.RawMessage{})
+var timeType = reflect.TypeOf(time.Time{})
 
 var (
 	fieldMapCache  sync.Map // map[reflect.Type]map[string]int (index of field)
@@ -332,63 +333,132 @@ func ScanRow(rows *sql.Rows, doc any) error {
 			continue
 		}
 
-		fieldIdx, ok := fieldMap[col]
-		if !ok {
-			continue
-		}
-
-		field := val.Field(fieldIdx)
-		if !field.CanSet() {
-			continue
-		}
-
-		if IsJSONField(val.Type().Field(fieldIdx)) {
-			if err := setJSONField(field, rawVal); err != nil {
+		// Columns aliased as "prefix.column" (e.g. from a JOIN) hydrate a
+		// nested struct field named by the prefix.
+		if prefix, inner, isNested := strings.Cut(col, "."); isNested {
+			if err := setNestedField(val, prefix, inner, rawVal); err != nil {
 				return err
 			}
 			continue
 		}
 
-		// Handle type conversion if necessary
-		v := reflect.ValueOf(rawVal)
-		if v.Type().AssignableTo(field.Type()) {
-			field.Set(v)
-		} else if field.Kind() == reflect.Ptr {
-			// Handle pointer assignment
-			elemType := field.Type().Elem()
-			if v.Type().AssignableTo(elemType) {
-				newVal := reflect.New(elemType)
-				newVal.Elem().Set(v)
-				field.Set(newVal)
-			} else if v.Type().ConvertibleTo(elemType) {
-				newVal := reflect.New(elemType)
-				newVal.Elem().Set(v.Convert(elemType))
-				field.Set(newVal)
-			} else if elemType.String() == "time.Time" {
-				// Special handling for time.Time from string
-				if s, ok := rawVal.(string); ok {
-					if t, err := parseTime(s); err == nil {
-						newVal := reflect.New(elemType)
-						newVal.Elem().Set(reflect.ValueOf(t))
-						field.Set(newVal)
-					}
-				}
-			}
-		} else if field.Type().String() == "time.Time" {
-			if s, ok := rawVal.(string); ok {
-				if t, err := parseTime(s); err == nil {
-					field.Set(reflect.ValueOf(t))
-				}
-			}
-		} else if field.Kind() == reflect.Bool {
-			// SQLite stores BOOLEAN as INTEGER, so the driver returns int64;
-			// int64 is not ConvertibleTo bool, so convert explicitly.
-			field.SetBool(asBool(rawVal))
-		} else if v.Type().ConvertibleTo(field.Type()) {
-			field.Set(v.Convert(field.Type()))
+		fieldIdx, ok := fieldMap[col]
+		if !ok {
+			continue
+		}
+
+		if err := setFieldValue(val.Field(fieldIdx), val.Type().Field(fieldIdx), rawVal); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// setFieldValue assigns a scanned raw DB value onto a struct field, handling
+// JSON columns, pointers, time.Time, bool coercion, and convertible types.
+func setFieldValue(field reflect.Value, sf reflect.StructField, rawVal any) error {
+	if !field.CanSet() {
+		return nil
+	}
+
+	if IsJSONField(sf) {
+		return setJSONField(field, rawVal)
+	}
+
+	v := reflect.ValueOf(rawVal)
+	switch {
+	case v.Type().AssignableTo(field.Type()):
+		field.Set(v)
+	case field.Kind() == reflect.Ptr:
+		elemType := field.Type().Elem()
+		switch {
+		case v.Type().AssignableTo(elemType):
+			newVal := reflect.New(elemType)
+			newVal.Elem().Set(v)
+			field.Set(newVal)
+		case v.Type().ConvertibleTo(elemType):
+			newVal := reflect.New(elemType)
+			newVal.Elem().Set(v.Convert(elemType))
+			field.Set(newVal)
+		case elemType == timeType:
+			if s, ok := rawVal.(string); ok {
+				if t, err := parseTime(s); err == nil {
+					newVal := reflect.New(elemType)
+					newVal.Elem().Set(reflect.ValueOf(t))
+					field.Set(newVal)
+				}
+			}
+		}
+	case field.Type() == timeType:
+		if s, ok := rawVal.(string); ok {
+			if t, err := parseTime(s); err == nil {
+				field.Set(reflect.ValueOf(t))
+			}
+		}
+	case field.Kind() == reflect.Bool:
+		// SQLite stores BOOLEAN as INTEGER, so the driver returns int64;
+		// int64 is not ConvertibleTo bool, so convert explicitly.
+		field.SetBool(asBool(rawVal))
+	case v.Type().ConvertibleTo(field.Type()):
+		field.Set(v.Convert(field.Type()))
+	}
+	return nil
+}
+
+// setNestedField routes a "prefix.column" scanned value into the nested struct
+// field named by prefix, allocating a pointer target if needed. Unknown
+// prefixes are ignored so extra joined columns don't error.
+func setNestedField(parent reflect.Value, prefix, inner string, rawVal any) error {
+	fieldIdx, ok := nestedFieldIndex(parent.Type(), prefix)
+	if !ok {
+		return nil
+	}
+
+	nf := parent.Field(fieldIdx)
+	if !nf.CanSet() {
+		return nil
+	}
+
+	target := nf
+	if target.Kind() == reflect.Ptr {
+		if target.IsNil() {
+			target.Set(reflect.New(target.Type().Elem()))
+		}
+		target = target.Elem()
+	}
+	if target.Kind() != reflect.Struct {
+		return nil
+	}
+
+	innerMap := GetDBFieldMap(target.Addr().Interface())
+	innerIdx, ok := innerMap[inner]
+	if !ok {
+		return nil
+	}
+	return setFieldValue(target.Field(innerIdx), target.Type().Field(innerIdx), rawVal)
+}
+
+// nestedFieldIndex returns the index of a struct or pointer-to-struct field on t
+// whose db column name matches prefix. JSON fields and time.Time are excluded,
+// as they are scalar columns rather than joinable nested entities.
+func nestedFieldIndex(t reflect.Type, prefix string) (int, bool) {
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+		if !sf.IsExported() || IsJSONField(sf) {
+			continue
+		}
+		ft := sf.Type
+		for ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+		}
+		if ft.Kind() != reflect.Struct || ft == timeType {
+			continue
+		}
+		if GetFieldName(sf) == prefix {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // asBool coerces a scanned SQL value into a Go bool. SQLite returns BOOLEAN

@@ -39,7 +39,7 @@ go test ./examples/
 | Validation (tag rules + custom `Validate()`) | [`example_validation_test.go`](examples/example_validation_test.go) |
 | Soft delete / `WithDeleted` / `Restore` | [`example_softdelete_test.go`](examples/example_softdelete_test.go) |
 | JSON columns | [`example_json_test.go`](examples/example_json_test.go) |
-| JOIN with column projection | [`example_join_test.go`](examples/example_join_test.go) |
+| JOIN with column projection + nested struct hydration | [`example_join_test.go`](examples/example_join_test.go) |
 | Transactions (commit / rollback) | [`example_transaction_test.go`](examples/example_transaction_test.go) |
 | Zero-value control (`req` / `MustFilterCols`) | [`example_zerovalue_test.go`](examples/example_zerovalue_test.go) |
 
@@ -236,6 +236,22 @@ Perform calculations directly through the query builder:
 db.Table("user").Count("id", "total_users").FindMany(ctx, &results)
 db.Table("user").Avg("age", "average_age").FindMany(ctx, &results)
 // Supported: Count, Sum, Avg, Min, Max
+```
+
+#### Joins
+Join related tables and project their columns. Alias joined columns as
+`"prefix.column"` to hydrate a nested struct field named by the prefix:
+
+```go
+type PostWithAuthor struct {
+    Title  string  `db:"title"`
+    Author Account `db:"author"` // filled from columns aliased "author.*"
+}
+
+db.Table("post").
+    Columns(`post.title AS title`, `account.name AS "author.name"`).
+    Join("account", "account.id = post.author_id").
+    FindMany(ctx, &rows)
 ```
 
 #### Soft Delete

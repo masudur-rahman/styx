@@ -1,11 +1,15 @@
 package sql
 
 import (
+	stdsql "database/sql"
 	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestAsBool_conversions(t *testing.T) {
@@ -139,4 +143,47 @@ func TestSetJSONField(t *testing.T) {
 		assert.NoError(t, setJSONField(f, []byte{}))
 		assert.Equal(t, jsonAddress{}, doc.Address)
 	})
+}
+
+type joinAuthor struct {
+	ID   int64  `db:"id"`
+	Name string `db:"name"`
+}
+
+type joinBook struct {
+	ID     int64      `db:"id"`
+	Title  string     `db:"title"`
+	Author joinAuthor `db:"author"`
+}
+
+func TestScanRow_nestedJoinHydration(t *testing.T) {
+	db, err := stdsql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	mustExec(t, db, `CREATE TABLE author(id INTEGER, name TEXT)`)
+	mustExec(t, db, `CREATE TABLE book(id INTEGER, title TEXT, author_id INTEGER)`)
+	mustExec(t, db, `INSERT INTO author VALUES (1,'alice')`)
+	mustExec(t, db, `INSERT INTO book VALUES (10,'go in action',1)`)
+
+	rows, err := db.Query(`SELECT book.id AS id, book.title AS title,
+		author.id AS "author.id", author.name AS "author.name"
+		FROM book JOIN author ON author.id = book.author_id`)
+	require.NoError(t, err)
+	defer rows.Close()
+	require.True(t, rows.Next())
+
+	var b joinBook
+	require.NoError(t, ScanRow(rows, &b))
+
+	assert.Equal(t, int64(10), b.ID)
+	assert.Equal(t, "go in action", b.Title)
+	assert.Equal(t, int64(1), b.Author.ID)
+	assert.Equal(t, "alice", b.Author.Name)
+}
+
+func mustExec(t *testing.T, db *stdsql.DB, query string) {
+	t.Helper()
+	_, err := db.Exec(query)
+	require.NoError(t, err)
 }
