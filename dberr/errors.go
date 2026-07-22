@@ -54,6 +54,11 @@ var (
 
 	// ErrValidationFailed is returned when validation rules are not satisfied.
 	ErrValidationFailed = errors.New("styx: validation failed")
+
+	// ErrNoSQLNotTransactional indicates the NoSQL side of a UnitOfWork does not
+	// participate in transactions: its writes are not rolled back when the SQL
+	// transaction is aborted.
+	ErrNoSQLNotTransactional = errors.New("styx: NoSQL engine is not transactional; its writes are not rolled back")
 )
 
 // ValidationError represents a collection of validation errors.
