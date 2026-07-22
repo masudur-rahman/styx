@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	stdsql "database/sql"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/masudur-rahman/styx/dberr"
@@ -178,4 +180,74 @@ func TestDeleteOne_nonExistentRow(t *testing.T) {
 
 	err = db.Table("user").ID(999999).DeleteOne(ctx)
 	assert.ErrorIs(t, err, dberr.ErrNotFound)
+}
+
+// --- Bulk insert & lifecycle hook integration tests (isolated in-memory DBs) ---
+
+var memDBCounter int64
+
+// newMemEngine returns an isolated in-memory SQLite engine backed by a single
+// connection so the synced schema persists for the test.
+func newMemEngine(t *testing.T) sql.Engine {
+	t.Helper()
+	n := atomic.AddInt64(&memDBCounter, 1)
+	dsn := fmt.Sprintf("file:sqlitetest%d?mode=memory&cache=shared", n)
+	conn, err := stdsql.Open("sqlite", dsn)
+	require.NoError(t, err)
+	conn.SetMaxOpenConns(1)
+	t.Cleanup(func() { conn.Close() })
+	return NewSQLite(conn)
+}
+
+// hookEvents records lifecycle hook invocations across hookPerson operations.
+var hookEvents []string
+
+type hookPerson struct {
+	ID   int64  `db:"id,pk autoincr"`
+	Name string `db:"name"`
+}
+
+func (p *hookPerson) BeforeCreate(ctx context.Context) error {
+	hookEvents = append(hookEvents, "before:"+p.Name)
+	return nil
+}
+
+func (p *hookPerson) AfterFind(ctx context.Context) error {
+	hookEvents = append(hookEvents, "find:"+p.Name)
+	return nil
+}
+
+func TestInsertMany_bulkSingleQuery(t *testing.T) {
+	hookEvents = nil
+	ctx := context.Background()
+	db := newMemEngine(t)
+	require.NoError(t, db.Sync(ctx, hookPerson{}))
+
+	p1 := &hookPerson{Name: "alice"}
+	p2 := &hookPerson{Name: "bob"}
+	p3 := &hookPerson{Name: "carol"}
+
+	ids, err := db.Table("hook_person").InsertMany(ctx, []any{p1, p2, p3})
+	require.NoError(t, err)
+	require.Len(t, ids, 3)
+
+	// IDs assigned back, unique, and BeforeCreate ran per doc in order.
+	assert.NotZero(t, p1.ID)
+	assert.NotEqual(t, p1.ID, p2.ID)
+	assert.Equal(t, []string{"before:alice", "before:bob", "before:carol"}, hookEvents)
+}
+
+func TestFindMany_runsAfterFindPerRow(t *testing.T) {
+	ctx := context.Background()
+	db := newMemEngine(t)
+	require.NoError(t, db.Sync(ctx, hookPerson{}))
+
+	_, err := db.Table("hook_person").InsertMany(ctx, []any{&hookPerson{Name: "a"}, &hookPerson{Name: "b"}})
+	require.NoError(t, err)
+
+	hookEvents = nil
+	var people []hookPerson
+	require.NoError(t, db.Table("hook_person").OrderBy("id", "ASC").FindMany(ctx, &people))
+	require.Len(t, people, 2)
+	assert.Equal(t, []string{"find:a", "find:b"}, hookEvents)
 }

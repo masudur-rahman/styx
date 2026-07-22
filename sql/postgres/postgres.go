@@ -229,6 +229,9 @@ func (pg Postgres) ForceDelete(ctx context.Context, filter ...any) error {
 }
 
 func (pg Postgres) Restore(ctx context.Context, filter ...any) error {
+	if len(filter) > 0 {
+		pg = pg.detectSoftDelete(filter[0])
+	}
 	pg.statement.GenerateWhereClause(filter...)
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
@@ -260,6 +263,9 @@ func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bo
 	query := pg.statement.GenerateReadQuery(document)
 	err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, document)
 	if err == nil {
+		if err = isql.RunAfterFind(ctx, document); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	if err == sql.ErrNoRows {
@@ -274,10 +280,16 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 	pg.statement.GenerateWhereClause(filter...)
 
 	query := pg.statement.GenerateReadQuery(documents)
-	return pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents)
+	if err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents); err != nil {
+		return err
+	}
+	return isql.RunAfterFindResults(ctx, documents)
 }
 
 func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {
+	if err := isql.RunBeforeCreate(ctx, document); err != nil {
+		return nil, err
+	}
 	if pg.statement.ShouldValidate() {
 		if err := validation.Validate(document); err != nil {
 			return nil, err
@@ -290,25 +302,47 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 	if err != nil {
 		return nil, err
 	}
-	return assignID(document, id)
+	if _, err = assignID(document, id); err != nil {
+		return nil, err
+	}
+	if err = isql.RunAfterCreate(ctx, document); err != nil {
+		return nil, err
+	}
+	return id, nil
 }
 
 func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, error) {
-	var ids []any
+	if len(documents) == 0 {
+		return nil, nil
+	}
 	for _, doc := range documents {
-		pkCol := isql.GetPKColumn(doc)
-		pg.statement.PKColumn(pkCol)
-		query := pg.statement.GenerateInsertQuery(doc)
-		id, err := pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
-		if err != nil {
+		if err := isql.RunBeforeCreate(ctx, doc); err != nil {
 			return nil, err
 		}
+		if pg.statement.ShouldValidate() {
+			if err := validation.Validate(doc); err != nil {
+				return nil, err
+			}
+		}
+	}
 
-		_, err = assignID(doc, id)
-		if err != nil {
+	pkCol := isql.GetPKColumn(documents[0])
+	pg.statement.PKColumn(pkCol)
+	query := pg.statement.GenerateBulkInsertQuery(documents)
+	ids, err := pg.statement.ExecuteBulkInsertQuery(ctx, pg.conn, pg.tx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, doc := range documents {
+		if i < len(ids) {
+			if _, err := assignID(doc, ids[i]); err != nil {
+				return nil, err
+			}
+		}
+		if err := isql.RunAfterCreate(ctx, doc); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
 	}
 
 	return ids, nil
@@ -384,6 +418,9 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
+	if err := isql.RunBeforeUpdate(ctx, document); err != nil {
+		return err
+	}
 	if pg.statement.ShouldValidate() {
 		if err := validation.Validate(document); err != nil {
 			return err
@@ -406,12 +443,15 @@ func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
 	}
-	return nil
+	return isql.RunAfterUpdate(ctx, document)
 }
 
 func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 	if len(filter) > 0 {
 		pg = pg.detectSoftDelete(filter[0])
+		if err := isql.RunBeforeDelete(ctx, filter[0]); err != nil {
+			return err
+		}
 	}
 	pg.statement.GenerateWhereClause(filter...)
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -434,6 +474,9 @@ func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 	}
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
+	}
+	if len(filter) > 0 {
+		return isql.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
 }

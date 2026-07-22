@@ -231,6 +231,9 @@ func (sq SQLite) ForceDelete(ctx context.Context, filter ...any) error {
 }
 
 func (sq SQLite) Restore(ctx context.Context, filter ...any) error {
+	if len(filter) > 0 {
+		sq = sq.detectSoftDelete(filter[0])
+	}
 	sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
@@ -262,6 +265,9 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 	query := sq.statement.GenerateReadQuery(document)
 	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document)
 	if err == nil {
+		if err = isql.RunAfterFind(ctx, document); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	if err == sql.ErrNoRows {
@@ -276,10 +282,16 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 	sq.statement.GenerateWhereClause(filter...)
 
 	query := sq.statement.GenerateReadQuery(documents)
-	return sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents)
+	if err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents); err != nil {
+		return err
+	}
+	return isql.RunAfterFindResults(ctx, documents)
 }
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
+	if err := isql.RunBeforeCreate(ctx, document); err != nil {
+		return nil, err
+	}
 	if sq.statement.ShouldValidate() {
 		if err := validation.Validate(document); err != nil {
 			return nil, err
@@ -292,26 +304,47 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 	if err != nil {
 		return nil, err
 	}
-	return assignID(document, id)
+	if _, err = assignID(document, id); err != nil {
+		return nil, err
+	}
+	if err = isql.RunAfterCreate(ctx, document); err != nil {
+		return nil, err
+	}
+	return id, nil
 }
 
 func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error) {
-	var ids []any
+	if len(documents) == 0 {
+		return nil, nil
+	}
 	for _, doc := range documents {
-		pkCol := isql.GetPKColumn(doc)
-		sq.statement.PKColumn(pkCol)
-		query := sq.statement.GenerateInsertQuery(doc)
-		id, err := sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
-
-		if err != nil {
+		if err := isql.RunBeforeCreate(ctx, doc); err != nil {
 			return nil, err
 		}
+		if sq.statement.ShouldValidate() {
+			if err := validation.Validate(doc); err != nil {
+				return nil, err
+			}
+		}
+	}
 
-		_, err = assignID(doc, id)
-		if err != nil {
+	pkCol := isql.GetPKColumn(documents[0])
+	sq.statement.PKColumn(pkCol)
+	query := sq.statement.GenerateBulkInsertQuery(documents)
+	ids, err := sq.statement.ExecuteBulkInsertQuery(ctx, sq.conn, sq.tx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, doc := range documents {
+		if i < len(ids) {
+			if _, err := assignID(doc, ids[i]); err != nil {
+				return nil, err
+			}
+		}
+		if err := isql.RunAfterCreate(ctx, doc); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
 	}
 
 	return ids, nil
@@ -387,6 +420,9 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
+	if err := isql.RunBeforeUpdate(ctx, document); err != nil {
+		return err
+	}
 	if sq.statement.ShouldValidate() {
 		if err := validation.Validate(document); err != nil {
 			return err
@@ -409,12 +445,15 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
 	}
-	return nil
+	return isql.RunAfterUpdate(ctx, document)
 }
 
 func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	if len(filter) > 0 {
 		sq = sq.detectSoftDelete(filter[0])
+		if err := isql.RunBeforeDelete(ctx, filter[0]); err != nil {
+			return err
+		}
 	}
 	sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -437,6 +476,9 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	}
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
+	}
+	if len(filter) > 0 {
+		return isql.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
 }

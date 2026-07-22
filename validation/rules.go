@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"unicode"
@@ -50,6 +51,14 @@ func ApplyRule(rule Rule, value any, fieldName string) string {
 		return checkNumeric(value, fieldName)
 	case "alpha":
 		return checkAlpha(value, fieldName)
+	case "len":
+		return checkLen(value, rule.Param, fieldName)
+	case "oneof":
+		return checkOneOf(value, rule.Param, fieldName)
+	case "gt":
+		return checkGt(value, rule.Param, fieldName)
+	case "lt":
+		return checkLt(value, rule.Param, fieldName)
 	default:
 		return ""
 	}
@@ -155,4 +164,79 @@ func checkAlpha(value any, field string) string {
 		}
 	}
 	return ""
+}
+
+// checkLen enforces an exact length for strings, slices, maps and arrays.
+func checkLen(value any, param string, field string) string {
+	n, err := strconv.Atoi(param)
+	if err != nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		if len(v) != n {
+			return fmt.Sprintf("%s must be exactly %d characters", field, n)
+		}
+	default:
+		rv := reflect.ValueOf(value)
+		switch rv.Kind() {
+		case reflect.Slice, reflect.Map, reflect.Array:
+			if rv.Len() != n {
+				return fmt.Sprintf("%s must have exactly %d items", field, n)
+			}
+		}
+	}
+	return ""
+}
+
+// checkOneOf enforces that a value equals one of the space-separated options.
+func checkOneOf(value any, param string, field string) string {
+	s := fmt.Sprintf("%v", value)
+	for _, opt := range strings.Fields(param) {
+		if s == opt {
+			return ""
+		}
+	}
+	return fmt.Sprintf("%s must be one of [%s]", field, strings.Join(strings.Fields(param), " "))
+}
+
+// checkGt enforces that a numeric value is greater than param.
+func checkGt(value any, param string, field string) string {
+	n, err := strconv.ParseFloat(param, 64)
+	if err != nil {
+		return ""
+	}
+	f, ok := toFloat(value)
+	if ok && f <= n {
+		return fmt.Sprintf("%s must be greater than %s", field, param)
+	}
+	return ""
+}
+
+// checkLt enforces that a numeric value is less than param.
+func checkLt(value any, param string, field string) string {
+	n, err := strconv.ParseFloat(param, 64)
+	if err != nil {
+		return ""
+	}
+	f, ok := toFloat(value)
+	if ok && f >= n {
+		return fmt.Sprintf("%s must be less than %s", field, param)
+	}
+	return ""
+}
+
+// toFloat converts any signed/unsigned integer or float value to float64.
+func toFloat(value any) (float64, bool) {
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), true
+	default:
+		return 0, false
+	}
 }

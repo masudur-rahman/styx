@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -163,6 +164,38 @@ func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
 	assert.Contains(t, query, "name")
 	assert.Contains(t, query, "email")
 	assert.Contains(t, query, "score")
+}
+
+func TestGenerateBulkInsertQuery_singleStatement(t *testing.T) {
+	stmt := new(Statement).Table("test_doc")
+	docs := []any{
+		insertTestDoc{Name: "alice", Email: "alice@test.com"},
+		insertTestDoc{Name: "bob", Email: "bob@test.com"},
+	}
+
+	query := stmt.GenerateBulkInsertQuery(docs)
+
+	assert.Contains(t, query, "INSERT INTO \"test_doc\"")
+	assert.Contains(t, query, "name")
+	assert.Contains(t, query, "email")
+	// one statement, two value groups
+	assert.Equal(t, 1, strings.Count(query, "INSERT INTO"))
+	assert.Contains(t, query, "(?, ?), (?, ?)")
+	assert.Equal(t, []any{"alice", "alice@test.com", "bob", "bob@test.com"}, stmt.args)
+}
+
+func TestGenerateBulkInsertQuery_columnUnionAcrossDocs(t *testing.T) {
+	stmt := new(Statement).Table("test_doc")
+	// score is zero in first doc but set in second → must be included for both rows
+	docs := []any{
+		insertTestDoc{Name: "alice"},
+		insertTestDoc{Name: "bob", Score: 7},
+	}
+
+	query := stmt.GenerateBulkInsertQuery(docs)
+
+	assert.Contains(t, query, "score")
+	assert.Equal(t, []any{"alice", 0, "bob", 7}, stmt.args)
 }
 
 type jsonAddress struct {

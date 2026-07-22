@@ -546,6 +546,105 @@ func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx 
 	return id, err
 }
 
+// GenerateBulkInsertQuery builds a single multi-row INSERT for docs that share
+// the same struct type. A column is included if it is forced, required, or
+// non-zero in any of the docs; every row then supplies a value for each such
+// column. Docs must all be of the same type.
+func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
+	stmt.mustColMap = stmt.generateMustColMap()
+
+	first := reflect.ValueOf(docs[0])
+	if first.Kind() == reflect.Pointer {
+		first = first.Elem()
+	}
+
+	include := make([]bool, first.NumField())
+	for _, doc := range docs {
+		rv := reflect.ValueOf(doc)
+		if rv.Kind() == reflect.Pointer {
+			rv = rv.Elem()
+		}
+		for idx := 0; idx < rv.NumField(); idx++ {
+			if include[idx] {
+				continue
+			}
+			field := rv.Type().Field(idx)
+			col := isql.GetFieldName(field)
+			if stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rv.Field(idx).IsZero() {
+				include[idx] = true
+			}
+		}
+	}
+
+	var cols []string
+	var fieldIdxs []int
+	for idx := 0; idx < first.NumField(); idx++ {
+		if !include[idx] {
+			continue
+		}
+		cols = append(cols, isql.GetFieldName(first.Type().Field(idx)))
+		fieldIdxs = append(fieldIdxs, idx)
+	}
+
+	if stmt.table == "" {
+		stmt.table = isql.GetTableName(docs[0])
+	}
+
+	rows := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		rv := reflect.ValueOf(doc)
+		if rv.Kind() == reflect.Pointer {
+			rv = rv.Elem()
+		}
+		placeholders := make([]string, len(fieldIdxs))
+		for i, fi := range fieldIdxs {
+			placeholders[i] = "?"
+			stmt.args = append(stmt.args, isql.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
+		}
+		rows = append(rows, "("+strings.Join(placeholders, ", ")+")")
+	}
+
+	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES %s",
+		stmt.table, strings.Join(cols, ", "), strings.Join(rows, ", "))
+}
+
+// ExecuteBulkInsertQuery runs a multi-row INSERT and returns the generated
+// primary keys in row order.
+func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) ([]any, error) {
+	pkCol := stmt.pkColumn
+	if pkCol == "" {
+		pkCol = "id"
+	}
+	query += fmt.Sprintf(" RETURNING %s;", pkCol)
+	if stmt.showSQL {
+		log.Printf("Bulk Insert Query: query: %v, args: %v\n", query, stmt.args)
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, query, stmt.args...)
+	} else {
+		rows, err = conn.QueryContext(ctx, query, stmt.args...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []any
+	for rows.Next() {
+		var id any
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (sql.Result, error) {
 	if stmt.showSQL {
 		log.Printf("Write Query: query: %v, args: %v\n", query, stmt.args)
