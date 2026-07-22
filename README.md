@@ -12,11 +12,36 @@ go get -u github.com/masudur-rahman/styx
 
 | Database   | Package              | Status     |
 |------------|----------------------|------------|
-| SQLite     | `sql/sqlite`         | Stable     |
-| PostgreSQL | `sql/postgres`       | Stable     |
-| Supabase   | `sql/supabase`       | Partial    |
-| ArangoDB   | `nosql/arango`       | Stable     |
-| MongoDB    | `nosql/mongo`        | Stable     |
+| SQLite     | `sql/sqlite`         | Stable       |
+| PostgreSQL | `sql/postgres`       | Stable       |
+| Supabase   | `sql/supabase`       | Experimental |
+| ArangoDB   | `nosql/arango`       | Stable       |
+| MongoDB    | `nosql/mongo`        | Experimental |
+
+> The SQL engines (SQLite, PostgreSQL) are the primary, fully supported targets.
+> Supabase is experimental and only partially implemented.
+
+## Examples
+
+Every feature below has a runnable example under [`examples/`](examples/), written
+as Go [example tests](https://pkg.go.dev/testing#hdr-Examples). Run them all with:
+
+```shell
+go test ./examples/
+```
+
+| Feature | Example |
+|---------|---------|
+| CRUD + filters (ID / Where / struct filter / Columns) | [`example_crud_test.go`](examples/example_crud_test.go) |
+| Ordering, pagination, LIKE / IN, aggregates + GROUP BY | [`example_query_test.go`](examples/example_query_test.go) |
+| Bulk insert (single multi-row `INSERT`) | [`example_bulk_test.go`](examples/example_bulk_test.go) |
+| Lifecycle hooks (`BeforeCreate`, `AfterFind`, …) | [`example_hooks_test.go`](examples/example_hooks_test.go) |
+| Validation (tag rules + custom `Validate()`) | [`example_validation_test.go`](examples/example_validation_test.go) |
+| Soft delete / `WithDeleted` / `Restore` | [`example_softdelete_test.go`](examples/example_softdelete_test.go) |
+| JSON columns | [`example_json_test.go`](examples/example_json_test.go) |
+| JOIN with column projection | [`example_join_test.go`](examples/example_join_test.go) |
+| Transactions (commit / rollback) | [`example_transaction_test.go`](examples/example_transaction_test.go) |
+| Zero-value control (`req` / `MustFilterCols`) | [`example_zerovalue_test.go`](examples/example_zerovalue_test.go) |
 
 ## Quickstart
 
@@ -87,6 +112,11 @@ db:"column_name,options"
 | `uqs`      | Unique composite group           | Adds composite `UNIQUE(col1, col2, ...)` across all `uqs` fields | -            |
 | `req`      | Required (never skip zero-value) | None                                             | Always includes the field in WHERE, INSERT, and UPDATE queries, even when zero-valued |
 | `json`     | Store field as JSON              | `JSONB` (Postgres) / `TEXT` (SQLite)             | Marshals the field on writes, unmarshals on reads |
+| `soft_delete` | Soft-delete marker column     | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |
+| `idx`      | Secondary index                  | `CREATE INDEX` on `Sync`                         | -            |
+| `unique_idx` | Unique secondary index         | `CREATE UNIQUE INDEX` on `Sync`                  | -            |
+
+> Validation rules use a separate `validate:"..."` tag — see [Struct Validation](#struct-validation).
 
 ### Examples
 
@@ -141,10 +171,10 @@ type Budget struct {
 	CategoryID string `db:"category_id,req"` // "" is always included
 }
 
-db.FindOne(&b, Budget{UserID: 99, CategoryID: ""})
+db.FindOne(ctx, &b, Budget{UserID: 99, CategoryID: ""})
 // WHERE user_id=99 AND category_id=''
 
-db.InsertOne(&Budget{UserID: 99, CategoryID: "", Amount: 500})
+db.InsertOne(ctx, &Budget{UserID: 99, CategoryID: "", Amount: 500})
 // INSERT INTO "budget" (user_id, category_id, amount) VALUES (99, '', 500)
 ```
 
@@ -153,10 +183,10 @@ db.InsertOne(&Budget{UserID: 99, CategoryID: "", Amount: 500})
 Opt in per query for specific columns in WHERE clauses.
 
 ```go
-db.MustFilterCols("category_id").FindOne(&b, Budget{UserID: 99, CategoryID: ""})
+db.MustFilterCols("category_id").FindOne(ctx, &b, Budget{UserID: 99, CategoryID: ""})
 // WHERE user_id=99 AND category_id=''
 
-db.MustFilterCols("category_id").DeleteOne(Budget{UserID: 99, CategoryID: ""})
+db.MustFilterCols("category_id").DeleteOne(ctx, Budget{UserID: 99, CategoryID: ""})
 // DELETE FROM "budget" WHERE user_id=99 AND category_id=''
 ```
 
@@ -165,7 +195,7 @@ db.MustFilterCols("category_id").DeleteOne(Budget{UserID: 99, CategoryID: ""})
 Opt in per query for specific columns in INSERT and UPDATE.
 
 ```go
-db.MustCols("alert_at", "category_id").InsertOne(&budget)
+db.MustCols("alert_at", "category_id").InsertOne(ctx, &budget)
 // Includes alert_at and category_id even when zero
 ```
 
@@ -174,7 +204,7 @@ db.MustCols("alert_at", "category_id").InsertOne(&budget)
 Include every field regardless of zero value. Use with caution.
 
 ```go
-db.AllCols().InsertOne(&budget)
+db.AllCols().InsertOne(ctx, &budget)
 // Includes all fields, including id=0, created_at=zero, etc.
 ```
 
@@ -203,8 +233,8 @@ All database engines implement the `sql.Engine` interface. Methods are chainable
 #### Aggregates
 Perform calculations directly through the query builder:
 ```go
-db.Table("user").Count("id", "total_users").FindMany(&results)
-db.Table("user").Avg("age", "average_age").FindMany(&results)
+db.Table("user").Count("id", "total_users").FindMany(ctx, &results)
+db.Table("user").Avg("age", "average_age").FindMany(ctx, &results)
 // Supported: Count, Sum, Avg, Min, Max
 ```
 
@@ -216,19 +246,39 @@ type User struct {
     DeletedAt *time.Time `db:"deleted_at,soft_delete"`
 }
 
-db.DeleteOne(User{ID: 1}) // Sets deleted_at = CURRENT_TIMESTAMP
-db.FindMany(&users)       // Automatically filters out rows where deleted_at IS NOT NULL
-db.WithDeleted().FindMany(&users) // Includes deleted rows
+db.DeleteOne(ctx, User{ID: 1})    // Sets deleted_at = CURRENT_TIMESTAMP
+db.FindMany(ctx, &users)          // Filters out rows where deleted_at IS NOT NULL
+db.WithDeleted().FindMany(ctx, &users) // Includes deleted rows
+db.Restore(ctx, User{ID: 1})      // Clears deleted_at
 ```
 
 #### Struct Validation
-Integrate validation rules into your models:
+Integrate validation rules into your models with the `validate` tag. Rules run on
+`InsertOne`, `InsertMany`, and `UpdateOne` when `EnableValidation(true)` is set,
+and return a typed `*dberr.ValidationError`.
+
 ```go
-type User struct {
-    Email string `db:"email" validate:"required,email"`
+type Signup struct {
+    Email    string `db:"email"    validate:"required,email"`
+    Age      int    `db:"age"      validate:"gt:0,lt:150"`
+    Role     string `db:"role"     validate:"oneof:admin user"`
+    Password string `db:"password" validate:"min:8"`
 }
 
-db.EnableValidation(true).InsertOne(&user) // Returns error if validation fails
+db.EnableValidation(true).InsertOne(ctx, &user) // returns error if validation fails
+```
+
+Built-in rules: `required`, `min`, `max`, `len`, `gt`, `lt`, `oneof`, `email`,
+`url`, `numeric`, `alpha`. For custom or cross-field checks, implement
+`Validate() error` on the model — it runs after the tag rules pass.
+
+```go
+func (s *Signup) Validate() error {
+    if s.Password != s.Confirm {
+        return errors.New("password confirmation does not match")
+    }
+    return nil
+}
 ```
 
 ### Zero-Value Control
@@ -241,49 +291,84 @@ db.EnableValidation(true).InsertOne(&user) // Returns error if validation fails
 
 ### CRUD Operations
 
-| Method                                          | Description                          |
-|-------------------------------------------------|--------------------------------------|
-| `FindOne(doc any, filter ...any) (bool, error)` | Find one record. Returns false if not found. |
-| `FindMany(docs any, filter ...any) error`       | Find multiple records into a slice   |
-| `InsertOne(doc any) (id any, err error)`        | Insert one record. Returns inserted ID. |
-| `InsertMany(docs []any) ([]any, error)`         | Insert multiple records              |
-| `UpdateOne(doc any) error`                      | Update one record (requires WHERE)   |
-| `DeleteOne(filter ...any) error`                | Delete one record (requires WHERE)   |
+All operations take a `context.Context` as the first argument.
+
+| Method                                                    | Description                          |
+|-----------------------------------------------------------|--------------------------------------|
+| `FindOne(ctx, doc any, filter ...any) (bool, error)`      | Find one record. Returns false if not found. |
+| `FindMany(ctx, docs any, filter ...any) error`            | Find multiple records into a slice   |
+| `InsertOne(ctx, doc any) (id any, err error)`             | Insert one record. Returns inserted ID. |
+| `InsertMany(ctx, docs []any) ([]any, error)`              | Bulk insert as a single multi-row `INSERT`; returns generated IDs |
+| `UpdateOne(ctx, doc any) error`                           | Update one record (requires WHERE)   |
+| `DeleteOne(ctx, filter ...any) error`                     | Delete one record (requires WHERE)   |
+
+#### Bulk Insert
+
+`InsertMany` builds one multi-row `INSERT ... VALUES (..), (..)` statement and
+assigns the generated primary keys back onto each document, in order. A column is
+included when it is forced, `req`, or non-zero in any of the documents.
+
+```go
+ids, _ := db.Table("account").InsertMany(ctx, []any{
+    &Account{Name: "alice"}, &Account{Name: "bob"},
+})
+// ids == [1 2]; alice.ID and bob.ID are set
+```
+
+#### Lifecycle Hooks
+
+Implement any subset of the hook interfaces on your model; Styx invokes them
+around the matching operation. A non-nil error from a `Before*` hook aborts it.
+
+```go
+func (a *AuditRecord) BeforeCreate(ctx context.Context) error { /* set defaults */ return nil }
+func (a *AuditRecord) AfterFind(ctx context.Context) error    { /* post-process */ return nil }
+```
+
+Available: `BeforeCreate` / `AfterCreate`, `BeforeUpdate` / `AfterUpdate`,
+`BeforeDelete` / `AfterDelete`, `AfterFind`.
 
 ### Transactions
 
+`BeginTx` returns a transaction-scoped engine; call `Commit` or `Rollback` to end it.
+
 ```go
-tx, err := db.BeginTx()
-tx.Table("user").InsertOne(&user)
+tx, err := db.BeginTx(ctx)
+tx.Table("user").InsertOne(ctx, &user)
 tx.Commit()   // or tx.Rollback()
 ```
 
 ### Schema Migration
 
 ```go
-db.Sync(User{}, Budget{}, Wallet{})
+db.Sync(ctx, User{}, Budget{}, Wallet{})
 ```
 
-Creates tables if they don't exist, adds missing columns to existing tables.
+Creates tables if they don't exist, adds missing columns to existing tables, and
+creates indexes declared with the `idx` / `unique_idx` tags.
 
 ### Raw Queries
 
 ```go
-rows, err := db.Query("SELECT * FROM user WHERE name = ?", "masud")
-result, err := db.Exec("DELETE FROM user WHERE id = ?", 1)
+rows, err := db.Query(ctx, "SELECT * FROM user WHERE name = ?", "masud")
+result, err := db.Exec(ctx, "DELETE FROM user WHERE id = ?", 1)
 ```
 ## Unit of Work
 
 Styx provides a Unit of Work pattern to coordinate transactions across multiple database engines (SQL + NoSQL). See [Unit of Work Documentation](docs/unit_of_work.md) for more details.
 
 ```go
-uow := styx.NewUnitOfWork(sqlEngine, nosqlEngine)
+uow := styx.UnitOfWork{SQL: sqlEngine, NoSQL: nosqlEngine}
 
-err := uow.Execute(func(sqlTx sql.Engine, nosqlTx nosql.Engine) error {
-	sqlTx.Table("user").InsertOne(&user)
-	nosqlTx.Collection("logs").InsertOne(logEntry)
-	return nil
-})
+tx, err := uow.Begin(ctx)
+if err != nil {
+	return err
+}
+if _, err = tx.SQL.Table("user").InsertOne(ctx, &user); err != nil {
+	_ = tx.Rollback()
+	return err
+}
+return tx.Commit()
 ```
 
 ## Project Structure
