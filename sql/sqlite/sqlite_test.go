@@ -9,9 +9,7 @@ import (
 
 	"github.com/masudur-rahman/styx/dberr"
 	"github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 
-	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,99 +22,102 @@ type User struct {
 	Addr     string
 }
 
+// memDBCounter gives each test an isolated in-memory database.
+var memDBCounter int64
+
+// newMemEngine returns an isolated in-memory SQLite engine backed by a single
+// connection so a synced schema persists for the test.
+func newMemEngine(t *testing.T) sql.Engine {
+	t.Helper()
+	n := atomic.AddInt64(&memDBCounter, 1)
+	dsn := fmt.Sprintf("file:sqlitetest%d?mode=memory&cache=shared", n)
+	conn, err := stdsql.Open("sqlite", dsn)
+	require.NoError(t, err)
+	conn.SetMaxOpenConns(1)
+	t.Cleanup(func() { conn.Close() })
+	return NewSQLite(conn)
+}
+
+// initializeDB returns a fresh in-memory engine with the User table synced.
 func initializeDB(t *testing.T) (sql.Engine, func() error) {
-	conn, err := lib.GetSQLiteConnection("test.db")
-	require.Nil(t, err)
-
-	return NewSQLite(conn), conn.Close
+	t.Helper()
+	db := newMemEngine(t)
+	require.NoError(t, db.Sync(context.Background(), User{}))
+	return db, func() error { return nil }
 }
 
-func TestPostgres_Sync(t *testing.T) {
-	db, closer := initializeDB(t)
-	defer closer()
-	err := db.Sync(context.Background(), User{})
-	assert.Nil(t, err)
+func TestSQLite_Sync(t *testing.T) {
+	db := newMemEngine(t)
+	assert.Nil(t, db.Sync(context.Background(), User{}))
 }
 
-func TestPostgres_FindOne(t *testing.T) {
+func TestSQLite_FindOne(t *testing.T) {
 	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	db, err := db.BeginTx(ctx)
-	assert.Nil(t, err)
-	defer func() {
-		err = db.Commit()
-		assert.Nil(t, err)
-	}()
-
-	user := User{}
 	db = db.Table("user")
+	_, err := db.InsertOne(ctx, &User{Name: "masud", Email: "masud@test.test"})
+	require.NoError(t, err)
 
+	var user User
 	t.Run("find user by id", func(t *testing.T) {
 		has, err := db.ID(1).FindOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.True(t, has)
 	})
 
-	t.Run("find user by filter", func(t *testing.T) {
-		has, err := db.Where("email LIKE ?", "%@test.test").FindOne(ctx, &user, User{})
+	t.Run("find user by where", func(t *testing.T) {
+		has, err := db.Where("email LIKE ?", "%@test.test").FindOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.True(t, has)
 	})
+
+	t.Run("not found", func(t *testing.T) {
+		has, err := db.ID(9999).FindOne(ctx, &user)
+		assert.Nil(t, err)
+		assert.False(t, has)
+	})
 }
 
-func TestPostgres_FindMany(t *testing.T) {
+func TestSQLite_FindMany(t *testing.T) {
 	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	var users []User
-	//db = db.Table("user")
+	db = db.Table("user")
+	_, err := db.InsertMany(ctx, []any{
+		&User{Name: "masud", Email: "masud@test.test"},
+		&User{Name: "rahman", Email: "rahman@test.test"},
+	})
+	require.NoError(t, err)
 
 	t.Run("find all", func(t *testing.T) {
+		var users []User
 		err := db.FindMany(ctx, &users)
 		assert.Nil(t, err)
-	})
-
-	t.Run("find by filter", func(t *testing.T) {
-		err := db.FindMany(ctx, &users, User{Email: "masudjuly02@gmail.com"})
-		assert.Nil(t, err)
+		assert.Len(t, users, 2)
 	})
 
 	t.Run("find by where", func(t *testing.T) {
+		var users []User
 		err := db.Where("name like 'masud%'").FindMany(ctx, &users)
 		assert.Nil(t, err)
+		assert.Len(t, users, 1)
 	})
 }
 
-func TestPostgres_InsertOne(t *testing.T) {
+func TestSQLite_InsertOne(t *testing.T) {
 	ctx := context.Background()
 	db, closer := initializeDB(t)
 	defer closer()
 
-	db, err := db.BeginTx(ctx)
-	assert.Nil(t, err)
-
 	db = db.Table("user")
-	t.Run("insert data", func(t *testing.T) {
-		suffix := xid.New().String()
-		user := User{
-			Name:     "test-" + suffix,
-			FullName: "Test Name",
-			Email:    fmt.Sprintf("test-%v@test.test", suffix),
-		}
-		id, err := db.InsertOne(ctx, &user)
-		assert.Nil(t, err)
-		assert.NotEqual(t, 0, id)
-		if err != nil {
-			err = db.Rollback()
-			assert.Nil(t, err)
-		}
-
-		err = db.Commit()
-		assert.Nil(t, err)
-	})
+	user := User{Name: "test", FullName: "Test Name", Email: "test@test.test"}
+	id, err := db.InsertOne(ctx, &user)
+	assert.Nil(t, err)
+	assert.NotEqual(t, int64(0), id)
+	assert.NotZero(t, user.ID)
 }
 
 func TestSQLite_UpdateOne(t *testing.T) {
@@ -126,13 +127,11 @@ func TestSQLite_UpdateOne(t *testing.T) {
 
 	db = db.Table("user")
 	user := User{Name: "test", Email: "test@e.c"}
-	id, _ := db.InsertOne(ctx, &user)
+	id, err := db.InsertOne(ctx, &user)
+	require.NoError(t, err)
 
 	t.Run("update data", func(t *testing.T) {
-		update := User{
-			FullName: "Test Name 2",
-		}
-		err := db.ID(id).UpdateOne(ctx, update)
+		err := db.ID(id).UpdateOne(ctx, User{FullName: "Test Name 2"})
 		assert.Nil(t, err)
 	})
 }
@@ -143,18 +142,19 @@ func TestSQLite_DeleteOne(t *testing.T) {
 	defer closer()
 
 	db = db.Table("user")
-	user := User{Name: "del", Email: "del@e.c"}
-	id, _ := db.InsertOne(ctx, &user)
 
-	t.Run("delete data", func(t *testing.T) {
-		err := db.ID(id).DeleteOne(ctx)
-		assert.Nil(t, err)
+	t.Run("delete data by id", func(t *testing.T) {
+		user := User{Name: "del", Email: "del@e.c"}
+		id, err := db.InsertOne(ctx, &user)
+		require.NoError(t, err)
+		assert.Nil(t, db.ID(id).DeleteOne(ctx))
 	})
+
 	t.Run("delete data from filter", func(t *testing.T) {
-		user2 := User{Name: "del2", Email: "del2@e.c"}
-		id2, _ := db.InsertOne(ctx, &user2)
-		err := db.DeleteOne(ctx, User{ID: id2.(int64)})
-		assert.Nil(t, err)
+		user := User{Name: "del2", Email: "del2@e.c"}
+		id, err := db.InsertOne(ctx, &user)
+		require.NoError(t, err)
+		assert.Nil(t, db.DeleteOne(ctx, User{ID: id.(int64)}))
 	})
 }
 
@@ -163,10 +163,7 @@ func TestUpdateOne_nonExistentRow(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
 
-	err := db.Sync(ctx, User{})
-	require.Nil(t, err)
-
-	err = db.Table("user").ID(999999).UpdateOne(ctx, User{FullName: "ghost"})
+	err := db.Table("user").ID(999999).UpdateOne(ctx, User{FullName: "ghost"})
 	assert.ErrorIs(t, err, dberr.ErrNotFound)
 }
 
@@ -175,28 +172,8 @@ func TestDeleteOne_nonExistentRow(t *testing.T) {
 	db, closer := initializeDB(t)
 	defer closer()
 
-	err := db.Sync(ctx, User{})
-	require.Nil(t, err)
-
-	err = db.Table("user").ID(999999).DeleteOne(ctx)
+	err := db.Table("user").ID(999999).DeleteOne(ctx)
 	assert.ErrorIs(t, err, dberr.ErrNotFound)
-}
-
-// --- Bulk insert & lifecycle hook integration tests (isolated in-memory DBs) ---
-
-var memDBCounter int64
-
-// newMemEngine returns an isolated in-memory SQLite engine backed by a single
-// connection so the synced schema persists for the test.
-func newMemEngine(t *testing.T) sql.Engine {
-	t.Helper()
-	n := atomic.AddInt64(&memDBCounter, 1)
-	dsn := fmt.Sprintf("file:sqlitetest%d?mode=memory&cache=shared", n)
-	conn, err := stdsql.Open("sqlite", dsn)
-	require.NoError(t, err)
-	conn.SetMaxOpenConns(1)
-	t.Cleanup(func() { conn.Close() })
-	return NewSQLite(conn)
 }
 
 // hookEvents records lifecycle hook invocations across hookPerson operations.
