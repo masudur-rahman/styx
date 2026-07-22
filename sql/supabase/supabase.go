@@ -1,8 +1,13 @@
+// Package supabase provides an EXPERIMENTAL, incomplete Supabase implementation
+// of the sql.Engine interface. Most methods are unimplemented and will panic if
+// called. It is not supported for production use; prefer the SQLite or
+// PostgreSQL engines. See NewSupabase.
 package supabase
 
 import (
 	"context"
 	"database/sql"
+	"log"
 
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
@@ -16,7 +21,13 @@ type Supabase struct {
 	client *supabase.Client
 }
 
+// NewSupabase creates an experimental Supabase engine.
+//
+// Deprecated: The Supabase engine is experimental and only partially
+// implemented; most operations panic. Use sqlite.NewSQLite or
+// postgres.NewPostgres instead.
 func NewSupabase(client *supabase.Client) Supabase {
+	log.Println("styx: the Supabase engine is experimental and incomplete; not recommended for production use")
 	return Supabase{
 		client: client,
 	}
