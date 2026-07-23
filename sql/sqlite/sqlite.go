@@ -534,10 +534,16 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 }
 
 func (sq SQLite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if sq.tx != nil {
+		return sq.tx.QueryContext(ctx, query, args...)
+	}
 	return sq.conn.QueryContext(ctx, query, args...)
 }
 
 func (sq SQLite) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if sq.tx != nil {
+		return sq.tx.ExecContext(ctx, query, args...)
+	}
 	return sq.conn.ExecContext(ctx, query, args...)
 }
 

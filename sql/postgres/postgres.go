@@ -532,10 +532,16 @@ func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 }
 
 func (pg Postgres) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if pg.tx != nil {
+		return pg.tx.QueryContext(ctx, query, args...)
+	}
 	return pg.conn.QueryContext(ctx, query, args...)
 }
 
 func (pg Postgres) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if pg.tx != nil {
+		return pg.tx.ExecContext(ctx, query, args...)
+	}
 	return pg.conn.ExecContext(ctx, query, args...)
 }
 
