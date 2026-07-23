@@ -9,7 +9,7 @@ import (
 type Note struct {
 	ID        int64      `db:"id,pk autoincr"`
 	Title     string     `db:"title"`
-	DeletedAt *time.Time `db:"deleted_at,soft_delete"`
+	DeletedAt *time.Time `db:"deleted_at,archive"`
 }
 
 // Example_softDelete shows soft delete, WithDeleted, and Restore.

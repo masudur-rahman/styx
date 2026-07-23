@@ -19,7 +19,7 @@ type User struct {
 	Name      string     `db:"name,uq"`
 	Email     string     `db:"email,uq"`
 	Age       int        `db:"age"`
-	DeletedAt *time.Time `db:"deleted_at,soft_delete"`
+	DeletedAt *time.Time `db:"deleted_at,archive"`
 }
 
 type Post struct {

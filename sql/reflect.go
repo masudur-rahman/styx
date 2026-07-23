@@ -126,7 +126,7 @@ found:
 
 var softDeleteCache sync.Map
 
-// ExtractSoftDeleteColumn returns the column name tagged with soft_delete, with caching.
+// ExtractSoftDeleteColumn returns the column name tagged with archive, with caching.
 func ExtractSoftDeleteColumn(table any) string {
 	t := reflect.TypeOf(table)
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice {
@@ -149,7 +149,7 @@ func ExtractSoftDeleteColumn(table any) string {
 			continue
 		}
 		for _, part := range strings.Fields(parts[1]) {
-			if strings.ToLower(part) == "soft_delete" {
+			if strings.ToLower(part) == "archive" {
 				softDeleteCol = parts[0]
 				if softDeleteCol == "" {
 					softDeleteCol = strcase.ToSnake(field.Name)

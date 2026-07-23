@@ -113,7 +113,7 @@ db:"column_name,options"
 | `uqs`      | Unique composite group           | Adds composite `UNIQUE(col1, col2, ...)` across all `uqs` fields | -            |
 | `req`      | Required (never skip zero-value) | None                                             | Always includes the field in WHERE, INSERT, and UPDATE queries, even when zero-valued |
 | `json`     | Store field as JSON              | `JSONB` (Postgres) / `TEXT` (SQLite)             | Marshals the field on writes, unmarshals on reads |
-| `soft_delete` | Soft-delete marker column     | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |
+| `archive`  | Soft-delete marker column        | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |
 | `idx`      | Secondary index                  | `CREATE INDEX` on `Sync`                         | -            |
 | `unique_idx` | Unique secondary index         | `CREATE UNIQUE INDEX` on `Sync`                  | -            |
 
@@ -288,7 +288,7 @@ Declaratively enable soft deletes using struct tags:
 ```go
 type User struct {
     ID        int64      `db:"id,pk"`
-    DeletedAt *time.Time `db:"deleted_at,soft_delete"`
+    DeletedAt *time.Time `db:"deleted_at,archive"`
 }
 
 db.DeleteOne(ctx, User{ID: 1})    // Sets deleted_at = CURRENT_TIMESTAMP

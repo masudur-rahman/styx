@@ -169,7 +169,7 @@ func ExtractPKColumn(table any) string {
 	return "id"
 }
 
-// ExtractSoftDeleteColumn returns the column name tagged with soft_delete.
+// ExtractSoftDeleteColumn returns the column name tagged with archive.
 // Returns empty string if no soft delete tag is found.
 func ExtractSoftDeleteColumn(table any) string {
 	tableType := reflect.TypeOf(table)
@@ -194,7 +194,7 @@ func ExtractSoftDeleteColumn(table any) string {
 			continue
 		}
 		for _, part := range strings.Fields(parts[1]) {
-			if strings.ToLower(part) == "soft_delete" {
+			if strings.ToLower(part) == "archive" {
 				colName := parts[0]
 				if colName == "" {
 					colName = strcase.ToSnake(field.Name)
