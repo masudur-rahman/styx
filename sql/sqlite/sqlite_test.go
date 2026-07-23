@@ -51,6 +51,25 @@ func TestSQLite_Sync(t *testing.T) {
 	assert.Nil(t, db.Sync(context.Background(), User{}))
 }
 
+type indexedUser struct {
+	ID    int64  `db:"id,pk autoincr"`
+	Email string `db:"email"`
+	Name  string `db:"name,idx"`
+}
+
+func TestSync_idempotent(t *testing.T) {
+	ctx := context.Background()
+	db := newMemEngine(t)
+
+	// Repeated Sync must not error: table, columns, and indexes already exist.
+	require.NoError(t, db.Sync(ctx, indexedUser{}))
+	require.NoError(t, db.Sync(ctx, indexedUser{}))
+	require.NoError(t, db.Sync(ctx, indexedUser{}))
+
+	_, err := db.Table("indexed_user").InsertOne(ctx, &indexedUser{Email: "a@b.c", Name: "alice"})
+	assert.NoError(t, err)
+}
+
 func TestSQLite_FindOne(t *testing.T) {
 	ctx := context.Background()
 	db, closer := initializeDB(t)

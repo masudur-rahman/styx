@@ -389,8 +389,10 @@ tx.Commit()   // or tx.Rollback()
 db.Sync(ctx, User{}, Budget{}, Wallet{})
 ```
 
-Creates tables if they don't exist, adds missing columns to existing tables, and
-creates indexes declared with the `idx` / `unique_idx` tags.
+`Sync` is **additive and idempotent**: it creates missing tables, adds missing
+columns, and creates `idx` / `unique_idx` indexes. It never drops, renames, or
+retypes columns. For destructive changes, see the
+[Migrations guide](docs/migrations.md).
 
 ### Raw Queries
 
