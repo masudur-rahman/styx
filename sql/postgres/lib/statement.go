@@ -9,10 +9,19 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/masudur-rahman/styx/dberr"
+	isql "github.com/masudur-rahman/styx/sql"
 	core "github.com/masudur-rahman/styx/sql/internal/core"
 )
+
+// observeQuery reports a completed statement to obs when one is configured.
+func observeQuery(ctx context.Context, obs isql.Observer, query string, args []any, start time.Time, err error) {
+	if obs != nil {
+		obs.OnQuery(ctx, query, args, time.Since(start), err)
+	}
+}
 
 type Statement struct {
 	table            string
@@ -557,17 +566,14 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	return b.String()
 }
 
-func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any) error {
-	//defer  stmt.cleanup()
-
+func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any, obs isql.Observer) (err error) {
 	if stmt.showSQL {
 		log.Printf("Read Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	var (
-		err  error
-		rows *sql.Rows
-	)
+	var rows *sql.Rows
 
 	if tx != nil {
 		rows, err = tx.QueryContext(ctx, query, stmt.args...)
@@ -636,7 +642,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 }
 
-func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
+func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer) (id any, err error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -645,11 +651,9 @@ func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx 
 	if stmt.showSQL {
 		log.Printf("Insert Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	var (
-		id  any
-		err error
-	)
 	if tx != nil {
 		err = tx.QueryRowContext(ctx, query, stmt.args...).Scan(&id)
 	} else {
@@ -726,7 +730,7 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 
 // ExecuteBulkInsertQuery runs a multi-row INSERT and returns the generated
 // primary keys in row order.
-func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) ([]any, error) {
+func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer) (ids []any, err error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -735,11 +739,10 @@ func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB,
 	if stmt.showSQL {
 		log.Printf("Bulk Insert Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+	var rows *sql.Rows
 	if tx != nil {
 		rows, err = tx.QueryContext(ctx, query, stmt.args...)
 	} else {
@@ -750,26 +753,29 @@ func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB,
 	}
 	defer rows.Close()
 
-	var ids []any
 	for rows.Next() {
 		var id any
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return nil, scanErr
 		}
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
 }
 
-func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (sql.Result, error) {
+func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer) (res sql.Result, err error) {
 	if stmt.showSQL {
 		log.Printf("Write Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
 	if tx != nil {
-		return tx.ExecContext(ctx, query, stmt.args...)
+		res, err = tx.ExecContext(ctx, query, stmt.args...)
+		return res, err
 	}
-	return conn.ExecContext(ctx, query, stmt.args...)
+	res, err = conn.ExecContext(ctx, query, stmt.args...)
+	return res, err
 }
 
 func (stmt *Statement) generateMustColMap() map[string]bool {
