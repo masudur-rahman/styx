@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/masudur-rahman/styx/dberr"
-	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 
 	"github.com/iancoleman/strcase"
 
@@ -46,7 +46,7 @@ func fromDBFieldName(fieldName string) string {
 func GenerateReadQuery(tableName string, record map[string]any) string {
 	var conditions []string
 	for key, val := range record {
-		if isql.IsZeroValue(val) {
+		if core.IsZeroValue(val) {
 			continue
 		}
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 
 	"github.com/iancoleman/strcase"
 )
@@ -20,7 +20,7 @@ type fieldInfo struct {
 }
 
 func GenerateTableName(table interface{}) string {
-	return isql.GetTableName(table)
+	return core.GetTableName(table)
 }
 
 func getTableInfo(table interface{}) ([]fieldInfo, error) {
@@ -44,7 +44,7 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 			fmt.Println("non-exported fields: ", fieldType.Name)
 			continue
 		}
-		if isql.IsRelationField(fieldType) {
+		if core.IsRelationField(fieldType) {
 			continue
 		}
 
@@ -86,7 +86,7 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 		columnConstraint = " " + columnConstraint
 	}
 	sqlType := getSQLType(fieldValue.Type(), autoincr)
-	if isql.IsJSONField(fieldType) {
+	if core.IsJSONField(fieldType) {
 		sqlType = "JSONB"
 	}
 	return fieldInfo{
@@ -97,7 +97,7 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 }
 
 func getFieldName(fieldType reflect.StructField) string {
-	return isql.GetFieldName(fieldType)
+	return core.GetFieldName(fieldType)
 }
 
 func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool, isComposite bool) {
@@ -129,7 +129,7 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 }
 
 func hasReqTag(field reflect.StructField) bool {
-	return isql.HasReqTag(field)
+	return core.HasReqTag(field)
 }
 
 // ExtractPKColumn returns the primary key column name from a struct's pk tag.

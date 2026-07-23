@@ -9,6 +9,7 @@ import (
 
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 	"github.com/masudur-rahman/styx/validation"
 
@@ -196,7 +197,7 @@ func (sq SQLite) preload(ctx context.Context, docs any) error {
 	}
 	base := sq
 	base.statement = lib.Statement{}
-	return isql.PreloadRelations(ctx, base, docs, preloads)
+	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
 func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
@@ -236,7 +237,7 @@ func (sq SQLite) WithDeleted() isql.Engine {
 
 // detectSoftDelete sets soft delete column from struct tags if present.
 func (s SQLite) detectSoftDelete(doc any) SQLite {
-	if col := isql.ExtractSoftDeleteColumn(doc); col != "" {
+	if col := core.ExtractSoftDeleteColumn(doc); col != "" {
 		s.statement.SoftDeleteCol(col)
 	}
 	return s
@@ -282,7 +283,7 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 	query := sq.statement.GenerateReadQuery(document)
 	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document)
 	if err == nil {
-		if err = isql.RunAfterFind(ctx, document); err != nil {
+		if err = core.RunAfterFind(ctx, document); err != nil {
 			return false, err
 		}
 		if err = sq.preload(ctx, document); err != nil {
@@ -305,14 +306,14 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 	if err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents); err != nil {
 		return err
 	}
-	if err := isql.RunAfterFindResults(ctx, documents); err != nil {
+	if err := core.RunAfterFindResults(ctx, documents); err != nil {
 		return err
 	}
 	return sq.preload(ctx, documents)
 }
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
-	if err := isql.RunBeforeCreate(ctx, document); err != nil {
+	if err := core.RunBeforeCreate(ctx, document); err != nil {
 		return nil, err
 	}
 	if sq.statement.ShouldValidate() {
@@ -320,7 +321,7 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 			return nil, err
 		}
 	}
-	pkCol := isql.GetPKColumn(document)
+	pkCol := core.GetPKColumn(document)
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
 	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
@@ -330,7 +331,7 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 	if _, err = assignID(document, id); err != nil {
 		return nil, err
 	}
-	if err = isql.RunAfterCreate(ctx, document); err != nil {
+	if err = core.RunAfterCreate(ctx, document); err != nil {
 		return nil, err
 	}
 	return id, nil
@@ -341,7 +342,7 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 		return nil, nil
 	}
 	for _, doc := range documents {
-		if err := isql.RunBeforeCreate(ctx, doc); err != nil {
+		if err := core.RunBeforeCreate(ctx, doc); err != nil {
 			return nil, err
 		}
 		if sq.statement.ShouldValidate() {
@@ -351,7 +352,7 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 		}
 	}
 
-	pkCol := isql.GetPKColumn(documents[0])
+	pkCol := core.GetPKColumn(documents[0])
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateBulkInsertQuery(documents)
 	ids, err := sq.statement.ExecuteBulkInsertQuery(ctx, sq.conn, sq.tx, query)
@@ -365,7 +366,7 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 				return nil, err
 			}
 		}
-		if err := isql.RunAfterCreate(ctx, doc); err != nil {
+		if err := core.RunAfterCreate(ctx, doc); err != nil {
 			return nil, err
 		}
 	}
@@ -443,7 +444,7 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
-	if err := isql.RunBeforeUpdate(ctx, document); err != nil {
+	if err := core.RunBeforeUpdate(ctx, document); err != nil {
 		return err
 	}
 	if sq.statement.ShouldValidate() {
@@ -468,13 +469,13 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
 	}
-	return isql.RunAfterUpdate(ctx, document)
+	return core.RunAfterUpdate(ctx, document)
 }
 
 func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	if len(filter) > 0 {
 		sq = sq.detectSoftDelete(filter[0])
-		if err := isql.RunBeforeDelete(ctx, filter[0]); err != nil {
+		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
 			return err
 		}
 	}
@@ -501,7 +502,7 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 		return dberr.ErrNotFound
 	}
 	if len(filter) > 0 {
-		return isql.RunAfterDelete(ctx, filter[0])
+		return core.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
 }

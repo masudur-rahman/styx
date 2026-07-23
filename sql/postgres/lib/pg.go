@@ -9,7 +9,7 @@ import (
 
 	"github.com/masudur-rahman/styx/dberr"
 	"github.com/masudur-rahman/styx/pkg"
-	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
@@ -86,7 +86,7 @@ func MapsToRecords(records []map[string]any) (*pb.RecordsResponse, error) {
 func GenerateReadQuery(tableName string, record map[string]any) string {
 	var conditions []string
 	for key, val := range record {
-		if isql.IsZeroValue(val) {
+		if core.IsZeroValue(val) {
 			continue
 		}
 
@@ -176,7 +176,7 @@ func GenerateInsertQuery(tableName string, record map[string]any) string {
 func GenerateUpdateQuery(table string, id string, record map[string]any) string {
 	var setValues []string
 	for key, val := range record {
-		if isql.IsZeroValue(val) {
+		if core.IsZeroValue(val) {
 			continue
 		}
 		col, value := toColumnValue(key, val)

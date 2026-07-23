@@ -9,6 +9,7 @@ import (
 
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 	"github.com/masudur-rahman/styx/sql/postgres/lib"
 	"github.com/masudur-rahman/styx/validation"
 )
@@ -194,7 +195,7 @@ func (pg Postgres) preload(ctx context.Context, docs any) error {
 	}
 	base := pg
 	base.statement = lib.Statement{}
-	return isql.PreloadRelations(ctx, base, docs, preloads)
+	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
 func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
@@ -234,7 +235,7 @@ func (pg Postgres) WithDeleted() isql.Engine {
 
 // detectSoftDelete sets soft delete column from struct tags if present.
 func (pg Postgres) detectSoftDelete(doc any) Postgres {
-	if col := isql.ExtractSoftDeleteColumn(doc); col != "" {
+	if col := core.ExtractSoftDeleteColumn(doc); col != "" {
 		pg.statement.SoftDeleteCol(col)
 	}
 	return pg
@@ -280,7 +281,7 @@ func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bo
 	query := pg.statement.GenerateReadQuery(document)
 	err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, document)
 	if err == nil {
-		if err = isql.RunAfterFind(ctx, document); err != nil {
+		if err = core.RunAfterFind(ctx, document); err != nil {
 			return false, err
 		}
 		if err = pg.preload(ctx, document); err != nil {
@@ -303,14 +304,14 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 	if err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents); err != nil {
 		return err
 	}
-	if err := isql.RunAfterFindResults(ctx, documents); err != nil {
+	if err := core.RunAfterFindResults(ctx, documents); err != nil {
 		return err
 	}
 	return pg.preload(ctx, documents)
 }
 
 func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {
-	if err := isql.RunBeforeCreate(ctx, document); err != nil {
+	if err := core.RunBeforeCreate(ctx, document); err != nil {
 		return nil, err
 	}
 	if pg.statement.ShouldValidate() {
@@ -318,7 +319,7 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 			return nil, err
 		}
 	}
-	pkCol := isql.GetPKColumn(document)
+	pkCol := core.GetPKColumn(document)
 	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
 	id, err = pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query)
@@ -328,7 +329,7 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 	if _, err = assignID(document, id); err != nil {
 		return nil, err
 	}
-	if err = isql.RunAfterCreate(ctx, document); err != nil {
+	if err = core.RunAfterCreate(ctx, document); err != nil {
 		return nil, err
 	}
 	return id, nil
@@ -339,7 +340,7 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 		return nil, nil
 	}
 	for _, doc := range documents {
-		if err := isql.RunBeforeCreate(ctx, doc); err != nil {
+		if err := core.RunBeforeCreate(ctx, doc); err != nil {
 			return nil, err
 		}
 		if pg.statement.ShouldValidate() {
@@ -349,7 +350,7 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 		}
 	}
 
-	pkCol := isql.GetPKColumn(documents[0])
+	pkCol := core.GetPKColumn(documents[0])
 	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateBulkInsertQuery(documents)
 	ids, err := pg.statement.ExecuteBulkInsertQuery(ctx, pg.conn, pg.tx, query)
@@ -363,7 +364,7 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 				return nil, err
 			}
 		}
-		if err := isql.RunAfterCreate(ctx, doc); err != nil {
+		if err := core.RunAfterCreate(ctx, doc); err != nil {
 			return nil, err
 		}
 	}
@@ -441,7 +442,7 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
-	if err := isql.RunBeforeUpdate(ctx, document); err != nil {
+	if err := core.RunBeforeUpdate(ctx, document); err != nil {
 		return err
 	}
 	if pg.statement.ShouldValidate() {
@@ -466,13 +467,13 @@ func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
 	}
-	return isql.RunAfterUpdate(ctx, document)
+	return core.RunAfterUpdate(ctx, document)
 }
 
 func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 	if len(filter) > 0 {
 		pg = pg.detectSoftDelete(filter[0])
-		if err := isql.RunBeforeDelete(ctx, filter[0]); err != nil {
+		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
 			return err
 		}
 	}
@@ -499,7 +500,7 @@ func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 		return dberr.ErrNotFound
 	}
 	if len(filter) > 0 {
-		return isql.RunAfterDelete(ctx, filter[0])
+		return core.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
 }

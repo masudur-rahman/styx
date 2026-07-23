@@ -1,4 +1,4 @@
-package sql
+package core
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/iancoleman/strcase"
+
+	"github.com/masudur-rahman/styx/sql"
 )
 
 // RelationKind identifies the kind of association between two entities.
@@ -128,7 +130,7 @@ func relationTarget(ft reflect.Type) (reflect.Type, bool) {
 // PreloadRelations loads the named associations for already-fetched docs using
 // base to run batched child queries, then assigns the results onto each parent's
 // relation field. docs must be a pointer to a struct or a pointer to a slice.
-func PreloadRelations(ctx context.Context, base Engine, docs any, names []string) error {
+func PreloadRelations(ctx context.Context, base sql.Engine, docs any, names []string) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -179,7 +181,7 @@ func findRelation(relations []RelationInfo, name string) (RelationInfo, bool) {
 	return RelationInfo{}, false
 }
 
-func loadRelation(ctx context.Context, base Engine, parents []reflect.Value, ri RelationInfo) error {
+func loadRelation(ctx context.Context, base sql.Engine, parents []reflect.Value, ri RelationInfo) error {
 	switch ri.Kind {
 	case RelationBelongsTo:
 		return loadBelongsTo(ctx, base, parents, ri)
@@ -193,7 +195,7 @@ func loadRelation(ctx context.Context, base Engine, parents []reflect.Value, ri 
 
 // queryByIn fetches all rows of target whose keyCol is in keys, returning the
 // resulting slice value. An empty key set yields an empty slice without a query.
-func queryByIn(ctx context.Context, base Engine, target reflect.Type, keyCol string, keys []any) (reflect.Value, error) {
+func queryByIn(ctx context.Context, base sql.Engine, target reflect.Type, keyCol string, keys []any) (reflect.Value, error) {
 	slicePtr := reflect.New(reflect.SliceOf(target))
 	if len(keys) == 0 {
 		return slicePtr.Elem(), nil
@@ -232,7 +234,7 @@ func assignOne(field, child reflect.Value) {
 	field.Set(child)
 }
 
-func loadBelongsTo(ctx context.Context, base Engine, parents []reflect.Value, ri RelationInfo) error {
+func loadBelongsTo(ctx context.Context, base sql.Engine, parents []reflect.Value, ri RelationInfo) error {
 	childType := ri.Target
 	childPK := GetPKColumn(reflect.New(childType).Interface())
 	fkIdx, ok := GetDBFieldMap(parents[0].Interface())[ri.FK]
@@ -260,7 +262,7 @@ func loadBelongsTo(ctx context.Context, base Engine, parents []reflect.Value, ri
 	return nil
 }
 
-func loadHasMany(ctx context.Context, base Engine, parents []reflect.Value, ri RelationInfo) error {
+func loadHasMany(ctx context.Context, base sql.Engine, parents []reflect.Value, ri RelationInfo) error {
 	parentPK := GetPKColumn(parents[0].Interface())
 	parentPKIdx := GetDBFieldMap(parents[0].Interface())[parentPK]
 
@@ -302,7 +304,7 @@ func groupByKey(children reflect.Value, keyIdx int, target reflect.Type) map[any
 	return grouped
 }
 
-func loadManyToMany(ctx context.Context, base Engine, parents []reflect.Value, ri RelationInfo) error {
+func loadManyToMany(ctx context.Context, base sql.Engine, parents []reflect.Value, ri RelationInfo) error {
 	parentPK := GetPKColumn(parents[0].Interface())
 	parentPKIdx := GetDBFieldMap(parents[0].Interface())[parentPK]
 	childPK := GetPKColumn(reflect.New(ri.Target).Interface())

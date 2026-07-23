@@ -1,4 +1,4 @@
-package sql
+package core
 
 import (
 	stdsql "database/sql"

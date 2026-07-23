@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/masudur-rahman/styx/dberr"
-	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 )
 
 type Statement struct {
@@ -100,7 +100,7 @@ func (stmt *Statement) Where(cond string, args ...any) *Statement {
 }
 
 func (stmt *Statement) generateWhereClauseFromID() string {
-	if isql.IsZeroValue(stmt.id) {
+	if core.IsZeroValue(stmt.id) {
 		return ""
 	}
 	stmt.argCounter++
@@ -119,15 +119,15 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 
 	for idx := 0; idx < val.NumField(); idx++ {
 		field := val.Type().Field(idx)
-		col := isql.GetFieldName(field)
+		col := core.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustFilterColMap[col] || isql.HasReqTag(field) || !val.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || core.HasReqTag(field) || !val.Field(idx).IsZero()) {
 			continue
 		}
 
 		stmt.argCounter++
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, stmt.argCounter))
-		stmt.args = append(stmt.args, isql.SQLArgValue(field, val.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(field, val.Field(idx)))
 	}
 
 	return strings.Join(conditions, " AND ")
@@ -454,7 +454,7 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 		if val.Kind() == reflect.Slice {
 			doc = val.Index(0).Interface()
 		}
-		stmt.table = isql.GetTableName(doc)
+		stmt.table = core.GetTableName(doc)
 	}
 
 	selectKeyword := "SELECT"
@@ -525,7 +525,7 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	switch elem.Kind() {
 	case reflect.Struct:
 		if rows.Next() {
-			if err = isql.ScanRow(rows, doc); err != nil {
+			if err = core.ScanRow(rows, doc); err != nil {
 				return err
 			}
 
@@ -534,7 +534,7 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	case reflect.Slice:
 		for rows.Next() {
 			rowElem := reflect.New(elem.Type().Elem()).Interface()
-			if err = isql.ScanRow(rows, rowElem); err != nil {
+			if err = core.ScanRow(rows, rowElem); err != nil {
 				return err
 			}
 			elem.Set(reflect.Append(elem, reflect.ValueOf(rowElem).Elem()))
@@ -555,23 +555,23 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	var cols, placeholders []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		if isql.IsRelationField(field) {
+		if core.IsRelationField(field) {
 			continue
 		}
-		col := isql.GetFieldName(field)
+		col := core.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
 		stmt.argCounter++
 		cols = append(cols, col)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", stmt.argCounter))
-		stmt.args = append(stmt.args, isql.SQLArgValue(field, rvalue.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
 	if stmt.table == "" {
-		stmt.table = isql.GetTableName(doc)
+		stmt.table = core.GetTableName(doc)
 	}
 
 	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
@@ -623,11 +623,11 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 				continue
 			}
 			field := rv.Type().Field(idx)
-			if isql.IsRelationField(field) {
+			if core.IsRelationField(field) {
 				continue
 			}
-			col := isql.GetFieldName(field)
-			if stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rv.Field(idx).IsZero() {
+			col := core.GetFieldName(field)
+			if stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rv.Field(idx).IsZero() {
 				include[idx] = true
 			}
 		}
@@ -639,12 +639,12 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		if !include[idx] {
 			continue
 		}
-		cols = append(cols, isql.GetFieldName(first.Type().Field(idx)))
+		cols = append(cols, core.GetFieldName(first.Type().Field(idx)))
 		fieldIdxs = append(fieldIdxs, idx)
 	}
 
 	if stmt.table == "" {
-		stmt.table = isql.GetTableName(docs[0])
+		stmt.table = core.GetTableName(docs[0])
 	}
 
 	rows := make([]string, 0, len(docs))
@@ -657,7 +657,7 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		for i, fi := range fieldIdxs {
 			stmt.argCounter++
 			placeholders[i] = fmt.Sprintf("$%d", stmt.argCounter)
-			stmt.args = append(stmt.args, isql.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
+			stmt.args = append(stmt.args, core.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
 		}
 		rows = append(rows, "("+strings.Join(placeholders, ", ")+")")
 	}
@@ -742,22 +742,22 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	freshCounter := 0
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		if isql.IsRelationField(field) {
+		if core.IsRelationField(field) {
 			continue
 		}
-		col := isql.GetFieldName(field)
+		col := core.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
 		freshCounter++
 		setCols = append(setCols, fmt.Sprintf("%s = $%d", col, freshCounter))
-		setArgs = append(setArgs, isql.SQLArgValue(field, rvalue.Field(idx)))
+		setArgs = append(setArgs, core.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
 	if stmt.table == "" {
-		stmt.table = isql.GetTableName(doc)
+		stmt.table = core.GetTableName(doc)
 	}
 
 	// Renumber existing WHERE placeholders ($1...$n → $(freshCounter+1)...$(freshCounter+n))
