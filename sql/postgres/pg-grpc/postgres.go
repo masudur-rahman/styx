@@ -143,6 +143,10 @@ func (d Database) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) Preload(assoc string) isql.Engine {
+	panic("implement me")
+}
+
 func (d Database) Join(table, condition string) isql.Engine {
 	panic("implement me")
 }

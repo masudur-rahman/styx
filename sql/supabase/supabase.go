@@ -157,6 +157,10 @@ func (s Supabase) Paginate(page, perPage int64) isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) Preload(assoc string) isql.Engine {
+	panic("implement me")
+}
+
 func (s Supabase) Join(table, condition string) isql.Engine {
 	panic("implement me")
 }

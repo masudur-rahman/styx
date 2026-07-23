@@ -182,6 +182,23 @@ func (sq SQLite) Max(col string, alias ...string) isql.Engine {
 	return sq
 }
 
+func (sq SQLite) Preload(assoc string) isql.Engine {
+	sq.statement.Preload(assoc)
+	return sq
+}
+
+// preload eager-loads any registered associations onto docs using a clean
+// engine (same connection/transaction, fresh statement) for batched queries.
+func (sq SQLite) preload(ctx context.Context, docs any) error {
+	preloads := sq.statement.Preloads()
+	if len(preloads) == 0 {
+		return nil
+	}
+	base := sq
+	base.statement = lib.Statement{}
+	return isql.PreloadRelations(ctx, base, docs, preloads)
+}
+
 func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
 	sq.statement.Paginate(page, perPage)
 	return sq
@@ -268,6 +285,9 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 		if err = isql.RunAfterFind(ctx, document); err != nil {
 			return false, err
 		}
+		if err = sq.preload(ctx, document); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	if err == sql.ErrNoRows {
@@ -285,7 +305,10 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 	if err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents); err != nil {
 		return err
 	}
-	return isql.RunAfterFindResults(ctx, documents)
+	if err := isql.RunAfterFindResults(ctx, documents); err != nil {
+		return err
+	}
+	return sq.preload(ctx, documents)
 }
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {

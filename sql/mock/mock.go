@@ -650,6 +650,20 @@ func (mr *MockEngineMockRecorder) Paginate(page, perPage interface{}) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Paginate", reflect.TypeOf((*MockEngine)(nil).Paginate), page, perPage)
 }
 
+// Preload mocks base method.
+func (m *MockEngine) Preload(assoc string) sql0.Engine {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Preload", assoc)
+	ret0, _ := ret[0].(sql0.Engine)
+	return ret0
+}
+
+// Preload indicates an expected call of Preload.
+func (mr *MockEngineMockRecorder) Preload(assoc interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Preload", reflect.TypeOf((*MockEngine)(nil).Preload), assoc)
+}
+
 // Query mocks base method.
 func (m *MockEngine) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	m.ctrl.T.Helper()

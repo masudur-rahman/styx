@@ -37,6 +37,18 @@ type Statement struct {
 	forceDelete      bool
 	validate         bool
 	joins            []string
+	preloads         []string
+}
+
+// Preload registers an association name to be eager-loaded after the read.
+func (stmt *Statement) Preload(assoc string) *Statement {
+	stmt.preloads = append(stmt.preloads, assoc)
+	return stmt
+}
+
+// Preloads returns the registered preload association names.
+func (stmt *Statement) Preloads() []string {
+	return stmt.preloads
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -501,6 +513,9 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	var cols []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
+		if isql.IsRelationField(field) {
+			continue
+		}
 		col := isql.GetFieldName(field)
 
 		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
@@ -569,6 +584,9 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 				continue
 			}
 			field := rv.Type().Field(idx)
+			if isql.IsRelationField(field) {
+				continue
+			}
 			col := isql.GetFieldName(field)
 			if stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rv.Field(idx).IsZero() {
 				include[idx] = true
@@ -683,6 +701,9 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	}
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
+		if isql.IsRelationField(field) {
+			continue
+		}
 		col := isql.GetFieldName(field)
 
 		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {

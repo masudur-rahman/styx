@@ -70,6 +70,11 @@ type Engine interface {
 	// Paginate sets LIMIT and OFFSET based on 1-indexed page and per-page count.
 	Paginate(page, perPage int64) Engine
 
+	// Preload eager-loads the named association (a struct field declared with a
+	// has_many/belongs_to/many_to_many db tag) after the read, using batched
+	// queries to avoid N+1.
+	Preload(assoc string) Engine
+
 	// Join adds a JOIN clause.
 	Join(table, condition string) Engine
 	// LeftJoin adds a LEFT JOIN clause.

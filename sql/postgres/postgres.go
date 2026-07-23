@@ -180,6 +180,23 @@ func (pg Postgres) Max(col string, alias ...string) isql.Engine {
 	return pg
 }
 
+func (pg Postgres) Preload(assoc string) isql.Engine {
+	pg.statement.Preload(assoc)
+	return pg
+}
+
+// preload eager-loads any registered associations onto docs using a clean
+// engine (same connection/transaction, fresh statement) for batched queries.
+func (pg Postgres) preload(ctx context.Context, docs any) error {
+	preloads := pg.statement.Preloads()
+	if len(preloads) == 0 {
+		return nil
+	}
+	base := pg
+	base.statement = lib.Statement{}
+	return isql.PreloadRelations(ctx, base, docs, preloads)
+}
+
 func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
 	pg.statement.Paginate(page, perPage)
 	return pg
@@ -266,6 +283,9 @@ func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bo
 		if err = isql.RunAfterFind(ctx, document); err != nil {
 			return false, err
 		}
+		if err = pg.preload(ctx, document); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	if err == sql.ErrNoRows {
@@ -283,7 +303,10 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 	if err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents); err != nil {
 		return err
 	}
-	return isql.RunAfterFindResults(ctx, documents)
+	if err := isql.RunAfterFindResults(ctx, documents); err != nil {
+		return err
+	}
+	return pg.preload(ctx, documents)
 }
 
 func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {

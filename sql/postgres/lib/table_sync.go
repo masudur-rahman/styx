@@ -44,6 +44,9 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 			fmt.Println("non-exported fields: ", fieldType.Name)
 			continue
 		}
+		if isql.IsRelationField(fieldType) {
+			continue
+		}
 
 		field := getFieldInfo(fieldType, fieldValue)
 
