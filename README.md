@@ -40,6 +40,7 @@ go test ./examples/
 | Soft delete / `WithDeleted` / `Restore` | [`example_softdelete_test.go`](examples/example_softdelete_test.go) |
 | JSON columns | [`example_json_test.go`](examples/example_json_test.go) |
 | JOIN with column projection + nested struct hydration | [`example_join_test.go`](examples/example_join_test.go) |
+| Relationships + `Preload` (has_many / belongs_to / many_to_many) | [`example_relations_test.go`](examples/example_relations_test.go) |
 | Transactions (commit / rollback) | [`example_transaction_test.go`](examples/example_transaction_test.go) |
 | Zero-value control (`req` / `MustFilterCols`) | [`example_zerovalue_test.go`](examples/example_zerovalue_test.go) |
 
@@ -253,6 +254,34 @@ db.Table("post").
     Join("account", "account.id = post.author_id").
     FindMany(ctx, &rows)
 ```
+
+#### Relationships & Preload
+Declare associations with db-tag options on struct fields, then eager-load them
+with `Preload`. Each preload runs a single batched query (no N+1). Relation
+fields are ignored by DDL, INSERT, and UPDATE.
+
+```go
+type Author struct {
+    ID    int64  `db:"id,pk autoincr"`
+    Name  string `db:"name"`
+    Books []Book `db:"-,has_many fk:author_id"`
+}
+type Book struct {
+    ID       int64   `db:"id,pk autoincr"`
+    AuthorID int64   `db:"author_id"`
+    Author   *Author `db:"-,belongs_to fk:author_id"`
+    Tags     []Tag   `db:"-,many_to_many join:book_tags fk:book_id ref:tag_id"`
+}
+
+db.Table("author").Preload("Books").ID(1).FindOne(ctx, &author)
+db.Table("book").Preload("Author").Preload("Tags").FindMany(ctx, &books)
+```
+
+| Option | Meaning |
+|--------|---------|
+| `has_many` + `fk:<col>`      | foreign key `<col>` lives on the child table |
+| `belongs_to` + `fk:<col>`    | foreign key `<col>` lives on this table |
+| `many_to_many` + `join:<table> fk:<col> ref:<col>` | linked through a join table |
 
 #### Soft Delete
 Declaratively enable soft deletes using struct tags:
