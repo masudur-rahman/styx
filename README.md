@@ -43,6 +43,11 @@ go test ./examples/
 | Relationships + `Preload` (o2m / m2o / m2m) | [`example_relations_test.go`](examples/example_relations_test.go) |
 | Transactions (commit / rollback) | [`example_transaction_test.go`](examples/example_transaction_test.go) |
 | Zero-value control (`req` / `MustFilterCols`) | [`example_zerovalue_test.go`](examples/example_zerovalue_test.go) |
+| CTE query builder (`With`) | [`example_cte_test.go`](examples/example_cte_test.go) |
+| Connection pool config + `Stats()` | [`example_pool_test.go`](examples/example_pool_test.go) |
+| Query observer (logging / metrics / tracing) | [`example_observer_test.go`](examples/example_observer_test.go) |
+| Prepared-statement caching (`WithStmtCache`) | [`example_stmtcache_test.go`](examples/example_stmtcache_test.go) |
+| Versioned migrations (destructive changes) | [`example_migrate_test.go`](examples/example_migrate_test.go) |
 
 ## Quickstart
 
@@ -244,6 +249,8 @@ All database engines implement the `sql.Engine` interface. Methods are chainable
 | `GroupBy(cols...)`                  | Add `GROUP BY` clause                      |
 | `Having(cond, args...)`             | Add `HAVING` clause for groups             |
 | `Distinct()`                        | Enable `SELECT DISTINCT`                   |
+| `With(name, sub)`                   | Add a `WITH` CTE from a sub-Engine         |
+| `Preload(assoc)`                    | Eager-load an association (no N+1)          |
 
 ### Features
 
@@ -269,6 +276,22 @@ db.Table("post").
     Columns(`post.title AS title`, `account.name AS "author.name"`).
     Join("account", "account.id = post.author_id").
     FindMany(ctx, &rows)
+```
+
+#### CTEs (`WITH`)
+Compile any Engine chain into a named Common Table Expression with `With`. The
+sub-Engine is turned into a subquery without executing; the CTE name is then
+referenced as a table via `Table`/`Join`. Placeholders and args are spliced in
+automatically for each dialect.
+
+```go
+spenders := db.Table("order").Columns("user_id").
+    GroupBy("user_id").Having("SUM(total) > ?", 1000)
+
+db.With("big_spenders", spenders).
+    Table("account").
+    Join("big_spenders", "account.id = big_spenders.user_id").
+    FindMany(ctx, &accounts)
 ```
 
 #### Relationships & Preload
@@ -427,8 +450,69 @@ db.Sync(ctx, User{}, Budget{}, Wallet{})
 
 `Sync` is **additive and idempotent**: it creates missing tables, adds missing
 columns, and creates `idx` / `uidx` indexes. It never drops, renames, or
-retypes columns. For destructive changes, see the
-[Migrations guide](docs/migrations.md).
+retypes columns.
+
+For **destructive or order-sensitive changes**, use the versioned migration
+runner in [`migrate`](migrate/). Migrations are plain Go functions with an `Up`
+and a `Down`, applied in version order and recorded in a `schema_migrations`
+table so each runs once; each runs in its own transaction.
+
+```go
+m := migrate.New(db).Register(
+    migrate.Migration{
+        Version: 1, Name: "drop_legacy_column",
+        Up:   func(ctx context.Context, e sql.Engine) error {
+            _, err := e.Exec(ctx, `ALTER TABLE users DROP COLUMN legacy`)
+            return err
+        },
+        Down: func(ctx context.Context, e sql.Engine) error {
+            _, err := e.Exec(ctx, `ALTER TABLE users ADD COLUMN legacy TEXT`)
+            return err
+        },
+    },
+)
+
+m.Up(ctx)        // apply all pending
+m.Down(ctx)      // reverse the latest
+m.Status(ctx)    // per-migration applied state
+```
+
+See the [Migrations guide](docs/migrations.md) for the full strategy.
+
+### Connection Pooling
+
+The `*sql.DB` you pass to `NewSQLite`/`NewPostgres` **is** the pool. Tune it with
+`PoolConfig` (only non-zero fields are applied) and read live usage via `Stats()`.
+
+```go
+isql.PoolConfig{MaxOpenConns: 25, MaxIdleConns: 5, ConnMaxLifetime: time.Hour}.Apply(conn)
+db := sqlite.NewSQLite(conn)
+stats := db.Stats() // sql.DBStats
+```
+
+`GetSQLiteConnection`/`GetPostgresConnection` also accept an optional `PoolConfig`.
+
+### Observability
+
+Pass an `Observer` at construction to receive a callback for every executed
+statement — the integration point for logging, metrics, and tracing (e.g. an
+OpenTelemetry adapter) with no external dependency.
+
+```go
+db := sqlite.NewSQLite(conn, isql.WithObserver(myObserver))
+// myObserver.OnQuery(ctx, query, args, dur, err) fires per statement
+```
+
+### Prepared-Statement Caching
+
+Opt in with `WithStmtCache` to memoise prepared statements by SQL text on the
+non-transaction path; recurring queries reuse the cached statement.
+
+```go
+db := sqlite.NewSQLite(conn, isql.WithStmtCache())
+```
+
+Options compose: `sqlite.NewSQLite(conn, isql.WithObserver(o), isql.WithStmtCache())`.
 
 ### Raw Queries
 
