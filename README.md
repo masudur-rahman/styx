@@ -117,6 +117,22 @@ db:"column_name,options"
 | `idx`      | Secondary index                  | `CREATE INDEX` on `Sync`                         | -            |
 | `unique_idx` | Unique secondary index         | `CREATE UNIQUE INDEX` on `Sync`                  | -            |
 
+> Indexes can be named for composite coverage: fields sharing the same
+> `idx:<name>` (or `unique_idx:<name>`) are combined into one multi-column index.
+> `idx` / `unique_idx` without a name create a single-column index.
+
+### Relationship Options
+
+Declared on struct fields that hold related entities (the column part is usually
+`-`). Excluded from DDL, INSERT, and UPDATE. See
+[Relationships & Preload](#relationships--preload) for a full example.
+
+| Option | Extra keys | Meaning |
+|--------|-----------|---------|
+| `belongs_to`   | `fk:<col>`                          | to-one; foreign key `<col>` is on **this** table |
+| `has_many`     | `fk:<col>`                          | to-many; foreign key `<col>` is on the **child** table |
+| `many_to_many` | `join:<table> fk:<col> ref:<col>`   | to-many through a join table (`fk` → this side, `ref` → other side) |
+
 > Validation rules use a separate `validate:"..."` tag — see [Struct Validation](#struct-validation).
 
 ### Examples
@@ -313,9 +329,29 @@ type Signup struct {
 db.EnableValidation(true).InsertOne(ctx, &user) // returns error if validation fails
 ```
 
-Built-in rules: `required`, `min`, `max`, `len`, `gt`, `lt`, `oneof`, `email`,
-`url`, `numeric`, `alpha`. For custom or cross-field checks, implement
-`Validate() error` on the model — it runs after the tag rules pass.
+Built-in rules:
+
+| Rule | Param | Applies to | Description |
+|------|-------|-----------|-------------|
+| `required`   | —                | any                        | Not the zero value; non-blank (trimmed) for strings |
+| `min:<n>`    | int              | string, int                | String length ≥ n, or integer value ≥ n |
+| `max:<n>`    | int              | string, int                | String length ≤ n, or integer value ≤ n |
+| `len:<n>`    | int              | string, slice, map, array  | Exact length n |
+| `gt:<n>`     | number           | int/uint/float             | Value greater than n |
+| `lt:<n>`     | number           | int/uint/float             | Value less than n |
+| `oneof:<…>`  | space-separated  | any                        | Value must equal one of the listed options |
+| `email`      | —                | string                     | Valid email address |
+| `url`        | —                | string                     | Valid URL (scheme + host) |
+| `numeric`    | —                | string                     | Digits, `.`, and `-` only |
+| `alpha`      | —                | string                     | Letters only |
+
+Rules are comma-separated in the tag (`validate:"required,min:3"`), so `oneof`
+options are **space**-separated (`oneof:admin user`), not comma-separated.
+`email`, `url`, `numeric`, and `alpha` skip empty strings — combine with
+`required` to forbid empties.
+
+For custom or cross-field checks, implement `Validate() error` on the model — it
+runs after the tag rules pass.
 
 ```go
 func (s *Signup) Validate() error {
