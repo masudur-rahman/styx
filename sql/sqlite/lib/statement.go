@@ -38,6 +38,14 @@ type Statement struct {
 	validate         bool
 	joins            []string
 	preloads         []string
+	ctes             []cteClause
+}
+
+// cteClause is a single named Common Table Expression (WITH name AS (sql)).
+type cteClause struct {
+	name string
+	sql  string
+	args []any
 }
 
 // Preload registers an association name to be eager-loaded after the read.
@@ -49,6 +57,21 @@ func (stmt *Statement) Preload(assoc string) *Statement {
 // Preloads returns the registered preload association names.
 func (stmt *Statement) Preloads() []string {
 	return stmt.preloads
+}
+
+// Args returns the accumulated positional arguments for the current statement.
+// Used to compile a statement into a subquery for CTE composition.
+func (stmt *Statement) Args() []any {
+	return stmt.args
+}
+
+// With registers a named Common Table Expression whose body is the already
+// compiled subSQL with its subArgs. The CTE is emitted as a WITH prefix and,
+// because SQLite uses positional "?" placeholders, its args are spliced ahead
+// of the main body args at query-generation time.
+func (stmt *Statement) With(name, subSQL string, subArgs []any) *Statement {
+	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: subSQL, args: subArgs})
+	return stmt
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -398,6 +421,24 @@ func (stmt *Statement) GenerateRestoreQuery() string {
 	return fmt.Sprintf("UPDATE \"%s\" SET %s = NULL WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
 }
 
+// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix and splices
+// the CTE args ahead of the main body args, since SQLite placeholders are
+// positional and the CTE bodies appear first in the final SQL. Returns "" when
+// no CTEs are registered.
+func (stmt *Statement) buildCTEPrefix() string {
+	if len(stmt.ctes) == 0 {
+		return ""
+	}
+	parts := make([]string, len(stmt.ctes))
+	var cteArgs []any
+	for i, c := range stmt.ctes {
+		parts[i] = fmt.Sprintf("%s AS (%s)", c.name, c.sql)
+		cteArgs = append(cteArgs, c.args...)
+	}
+	stmt.args = append(cteArgs, stmt.args...)
+	return "WITH " + strings.Join(parts, ", ") + " "
+}
+
 // GenerateReadQuery builds a SELECT query from the current statement state.
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string
@@ -421,6 +462,9 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	}
 
 	var b strings.Builder
+	if prefix := stmt.buildCTEPrefix(); prefix != "" {
+		b.WriteString(prefix)
+	}
 	fmt.Fprintf(&b, "%s %s FROM \"%s\"", selectKeyword, strings.Join(colParts, ", "), stmt.table)
 
 	for _, join := range stmt.joins {

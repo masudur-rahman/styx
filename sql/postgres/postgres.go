@@ -203,6 +203,25 @@ func (pg Postgres) Paginate(page, perPage int64) isql.Engine {
 	return pg
 }
 
+// With registers sub as a named CTE. sub is compiled to a subquery in place;
+// a non-Postgres Engine is ignored (returns the receiver unchanged).
+func (pg Postgres) With(name string, sub isql.Engine) isql.Engine {
+	s, ok := sub.(Postgres)
+	if !ok {
+		return pg
+	}
+	subSQL, subArgs := s.buildSubquery()
+	pg.statement.With(name, subSQL, subArgs)
+	return pg
+}
+
+// buildSubquery compiles the current statement into a SELECT string and its
+// args without executing, for use as a CTE or subquery body.
+func (pg Postgres) buildSubquery() (string, []any) {
+	query := pg.statement.GenerateReadQuery(nil)
+	return query, pg.statement.Args()
+}
+
 func (pg Postgres) Join(table, condition string) isql.Engine {
 	pg.statement.Join(table, condition)
 	return pg

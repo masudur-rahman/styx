@@ -75,6 +75,11 @@ type Engine interface {
 	// queries to avoid N+1.
 	Preload(assoc string) Engine
 
+	// With registers a named Common Table Expression (WITH name AS (sub)). The
+	// sub Engine is compiled to a subquery without executing; the CTE name can
+	// then be referenced as a table via Table/Join in the outer query.
+	With(name string, sub Engine) Engine
+
 	// Join adds a JOIN clause.
 	Join(table, condition string) Engine
 	// LeftJoin adds a LEFT JOIN clause.

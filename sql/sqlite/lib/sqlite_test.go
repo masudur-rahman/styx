@@ -237,3 +237,19 @@ func TestGenerateInsertQuery_jsonArgsAsText(t *testing.T) {
 	assert.Contains(t, query, "address")
 	assert.Equal(t, []any{"alice", `{"a":1}`, `{"street":"Road 1","city":"Dhaka"}`}, stmt.args)
 }
+
+func TestWith_sqlitePrependsCTEArgs(t *testing.T) {
+	sub := new(Statement).Table("orders").Columns("user_id")
+	sub.Where("total > ?", 1000)
+	subSQL := sub.GenerateReadQuery(nil)
+	subArgs := sub.Args()
+
+	outer := new(Statement).Table("users")
+	outer.With("big", subSQL, subArgs)
+	outer.Where("active = ?", true)
+	q := outer.GenerateReadQuery(nil)
+
+	assert.Contains(t, q, `WITH big AS (SELECT user_id FROM "orders" WHERE total > ?)`)
+	assert.Contains(t, q, `SELECT * FROM "users" WHERE active = ?`)
+	assert.Equal(t, []any{1000, true}, outer.Args())
+}

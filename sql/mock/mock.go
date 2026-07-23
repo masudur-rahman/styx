@@ -664,6 +664,20 @@ func (mr *MockEngineMockRecorder) Preload(assoc interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Preload", reflect.TypeOf((*MockEngine)(nil).Preload), assoc)
 }
 
+// With mocks base method.
+func (m *MockEngine) With(name string, sub sql0.Engine) sql0.Engine {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "With", name, sub)
+	ret0, _ := ret[0].(sql0.Engine)
+	return ret0
+}
+
+// With indicates an expected call of With.
+func (mr *MockEngineMockRecorder) With(name, sub interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "With", reflect.TypeOf((*MockEngine)(nil).With), name, sub)
+}
+
 // Query mocks base method.
 func (m *MockEngine) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	m.ctrl.T.Helper()

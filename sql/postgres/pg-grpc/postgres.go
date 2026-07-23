@@ -147,6 +147,10 @@ func (d Database) Preload(assoc string) isql.Engine {
 	panic("implement me")
 }
 
+func (d Database) With(name string, sub isql.Engine) isql.Engine {
+	panic("implement me")
+}
+
 func (d Database) Join(table, condition string) isql.Engine {
 	panic("implement me")
 }

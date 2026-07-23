@@ -41,7 +41,19 @@ type Statement struct {
 	validate         bool
 	joins            []string
 	preloads         []string
+	ctes             []cteClause
 }
+
+// cteClause is a single named Common Table Expression (WITH name AS (sql)).
+// Its args are merged into the statement's args at registration time, so the
+// clause only needs to carry the renumbered SQL body.
+type cteClause struct {
+	name string
+	sql  string
+}
+
+// placeholderRe matches Postgres positional placeholders ($1, $2, ...).
+var placeholderRe = regexp.MustCompile(`\$(\d+)`)
 
 // Preload registers an association name to be eager-loaded after the read.
 func (stmt *Statement) Preload(assoc string) *Statement {
@@ -52,6 +64,35 @@ func (stmt *Statement) Preload(assoc string) *Statement {
 // Preloads returns the registered preload association names.
 func (stmt *Statement) Preloads() []string {
 	return stmt.preloads
+}
+
+// Args returns the accumulated positional arguments for the current statement.
+// Used to compile a statement into a subquery for CTE composition.
+func (stmt *Statement) Args() []any {
+	return stmt.args
+}
+
+// With registers a named Common Table Expression whose body is the already
+// compiled subSQL with its subArgs. Because Postgres placeholders reference args
+// by number, the sub's $1..$k are shifted by the current arg count and its args
+// are appended, keeping placeholder numbers aligned with arg positions.
+func (stmt *Statement) With(name, subSQL string, subArgs []any) *Statement {
+	renumbered := renumberPlaceholders(subSQL, stmt.argCounter)
+	stmt.argCounter += len(subArgs)
+	stmt.args = append(stmt.args, subArgs...)
+	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: renumbered})
+	return stmt
+}
+
+// renumberPlaceholders shifts every $N placeholder in q up by offset.
+func renumberPlaceholders(q string, offset int) string {
+	if offset == 0 {
+		return q
+	}
+	return placeholderRe.ReplaceAllStringFunc(q, func(m string) string {
+		n, _ := strconv.Atoi(m[1:])
+		return "$" + strconv.Itoa(n+offset)
+	})
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -437,6 +478,20 @@ func (stmt *Statement) GenerateRestoreQuery() string {
 }
 
 // GenerateReadQuery builds a SELECT query from the current statement state.
+// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix. CTE args
+// were already merged into stmt.args by With, so only the SQL text is assembled
+// here. Returns "" when no CTEs are registered.
+func (stmt *Statement) buildCTEPrefix() string {
+	if len(stmt.ctes) == 0 {
+		return ""
+	}
+	parts := make([]string, len(stmt.ctes))
+	for i, c := range stmt.ctes {
+		parts[i] = fmt.Sprintf("%s AS (%s)", c.name, c.sql)
+	}
+	return "WITH " + strings.Join(parts, ", ") + " "
+}
+
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string
 	if len(stmt.aggregates) > 0 {
@@ -463,6 +518,9 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	}
 
 	var b strings.Builder
+	if prefix := stmt.buildCTEPrefix(); prefix != "" {
+		b.WriteString(prefix)
+	}
 	fmt.Fprintf(&b, "%s %s FROM \"%s\"", selectKeyword, strings.Join(colParts, ", "), stmt.table)
 
 	for _, join := range stmt.joins {

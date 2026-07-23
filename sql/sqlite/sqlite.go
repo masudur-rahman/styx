@@ -205,6 +205,25 @@ func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
 	return sq
 }
 
+// With registers sub as a named CTE. sub is compiled to a subquery in place;
+// a non-SQLite Engine is ignored (returns the receiver unchanged).
+func (sq SQLite) With(name string, sub isql.Engine) isql.Engine {
+	s, ok := sub.(SQLite)
+	if !ok {
+		return sq
+	}
+	subSQL, subArgs := s.buildSubquery()
+	sq.statement.With(name, subSQL, subArgs)
+	return sq
+}
+
+// buildSubquery compiles the current statement into a SELECT string and its
+// args without executing, for use as a CTE or subquery body.
+func (sq SQLite) buildSubquery() (string, []any) {
+	query := sq.statement.GenerateReadQuery(nil)
+	return query, sq.statement.Args()
+}
+
 func (sq SQLite) Join(table, condition string) isql.Engine {
 	sq.statement.Join(table, condition)
 	return sq

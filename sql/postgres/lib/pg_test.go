@@ -139,3 +139,33 @@ func TestGenerateUpdateQuery_jsonArgsAsText(t *testing.T) {
 	assert.Contains(t, query, "payload = $1")
 	assert.Equal(t, []any{`{"b":2}`, 7}, stmt.args)
 }
+
+func TestWith_postgresRenumbersAndOrdersArgs(t *testing.T) {
+	sub := new(Statement).Table("orders").Columns("user_id")
+	sub.Where("total > ?", 1000)
+	subSQL := sub.GenerateReadQuery(nil)
+	subArgs := sub.Args()
+
+	outer := new(Statement).Table("users")
+	outer.With("big", subSQL, subArgs)
+	outer.Where("active = ?", true)
+	q := outer.GenerateReadQuery(nil)
+
+	assert.Contains(t, q, `WITH big AS (SELECT user_id FROM "orders" WHERE total > $1)`)
+	assert.Contains(t, q, `SELECT * FROM "users" WHERE active = $2`)
+	assert.Equal(t, []any{1000, true}, outer.Args())
+}
+
+func TestWith_postgresRenumbersWhenCalledAfterWhere(t *testing.T) {
+	sub := new(Statement).Table("orders").Columns("user_id")
+	sub.Where("total > ?", 1000)
+
+	outer := new(Statement).Table("users")
+	outer.Where("active = ?", true)
+	outer.With("big", sub.GenerateReadQuery(nil), sub.Args())
+	q := outer.GenerateReadQuery(nil)
+
+	assert.Contains(t, q, `WITH big AS (SELECT user_id FROM "orders" WHERE total > $2)`)
+	assert.Contains(t, q, `WHERE active = $1`)
+	assert.Equal(t, []any{true, 1000}, outer.Args())
+}
