@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/masudur-rahman/styx/dberr"
+	isql "github.com/masudur-rahman/styx/sql"
 	core "github.com/masudur-rahman/styx/sql/internal/core"
 
 	"github.com/iancoleman/strcase"
@@ -15,11 +16,15 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// GetSQLiteConnection opens a SQLite database and returns a *sql.DB connection pool.
-func GetSQLiteConnection(dbPath string) (*sql.DB, error) {
+// GetSQLiteConnection opens a SQLite database and returns a *sql.DB connection
+// pool. An optional PoolConfig tunes the pool's size and connection lifetimes.
+func GetSQLiteConnection(dbPath string, pool ...isql.PoolConfig) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, err
+	}
+	if len(pool) > 0 {
+		pool[0].Apply(db)
 	}
 
 	if err = db.PingContext(context.Background()); err != nil {

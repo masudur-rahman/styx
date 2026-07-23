@@ -664,6 +664,20 @@ func (mr *MockEngineMockRecorder) Preload(assoc interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Preload", reflect.TypeOf((*MockEngine)(nil).Preload), assoc)
 }
 
+// Stats mocks base method.
+func (m *MockEngine) Stats() sql.DBStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Stats")
+	ret0, _ := ret[0].(sql.DBStats)
+	return ret0
+}
+
+// Stats indicates an expected call of Stats.
+func (mr *MockEngineMockRecorder) Stats() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stats", reflect.TypeOf((*MockEngine)(nil).Stats))
+}
+
 // With mocks base method.
 func (m *MockEngine) With(name string, sub sql0.Engine) sql0.Engine {
 	m.ctrl.T.Helper()

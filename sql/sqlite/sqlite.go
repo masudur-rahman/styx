@@ -552,6 +552,11 @@ func (sq SQLite) Close() error {
 	return sq.conn.Close()
 }
 
+// Stats returns live statistics for the underlying connection pool.
+func (sq SQLite) Stats() sql.DBStats {
+	return sq.conn.Stats()
+}
+
 func (sq SQLite) cleanup() {
 	sq.statement = lib.Statement{}
 }

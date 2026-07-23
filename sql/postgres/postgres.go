@@ -546,6 +546,11 @@ func (pg Postgres) DropTable(ctx context.Context, name string) error {
 	return lib.DropTable(ctx, pg.conn, name)
 }
 
+// Stats returns live statistics for the underlying connection pool.
+func (pg Postgres) Stats() sql.DBStats {
+	return pg.conn.Stats()
+}
+
 func (pg Postgres) Close() error {
 	return pg.conn.Close()
 }

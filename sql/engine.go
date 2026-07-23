@@ -126,4 +126,7 @@ type Engine interface {
 
 	// Close releases the underlying database connection.
 	Close() error
+
+	// Stats returns live statistics for the underlying connection pool.
+	Stats() sql.DBStats
 }

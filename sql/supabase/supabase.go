@@ -165,6 +165,10 @@ func (s Supabase) With(name string, sub isql.Engine) isql.Engine {
 	panic("implement me")
 }
 
+func (s Supabase) Stats() sql.DBStats {
+	panic("implement me")
+}
+
 func (s Supabase) Join(table, condition string) isql.Engine {
 	panic("implement me")
 }
