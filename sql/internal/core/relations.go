@@ -16,23 +16,23 @@ type RelationKind string
 
 const (
 	// RelationBelongsTo marks a field whose foreign key lives on this struct's table.
-	RelationBelongsTo RelationKind = "belongs_to"
+	RelationBelongsTo RelationKind = "m2o"
 	// RelationHasMany marks a slice field whose foreign key lives on the child table.
-	RelationHasMany RelationKind = "has_many"
+	RelationHasMany RelationKind = "o2m"
 	// RelationManyToMany marks a slice field linked through a join table.
-	RelationManyToMany RelationKind = "many_to_many"
+	RelationManyToMany RelationKind = "m2m"
 )
 
 // RelationInfo describes an association declared with db-tag options such as
-// `db:"-,has_many fk:user_id"`. Options: has_many | belongs_to | many_to_many,
-// plus fk:<col>, ref:<col> (many_to_many), join:<table> (many_to_many).
+// `db:"-,o2m fk:user_id"`. Options: o2m | m2o | m2m,
+// plus fk:<col>, ref:<col> (m2m), join:<table> (m2m).
 type RelationInfo struct {
 	Field      string       // Go field name holding the related entity(ies)
 	FieldIndex int          // index of that field on the parent struct
 	Kind       RelationKind // association kind
 	FK         string       // foreign key column
-	Ref        string       // reference column on the join table (many_to_many)
-	JoinTable  string       // join table name (many_to_many)
+	Ref        string       // reference column on the join table (m2m)
+	JoinTable  string       // join table name (m2m)
 	Target     reflect.Type // related entity struct type
 	Many       bool         // true when the field is a slice
 }

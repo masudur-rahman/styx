@@ -447,7 +447,7 @@ type indexInfo struct {
 	Unique bool
 }
 
-// extractIndexes parses idx and unique_idx tags from a struct type.
+// extractIndexes parses idx and uidx tags from a struct type.
 // Supports: db:"col,idx" (auto-named), db:"col,idx:my_index" (named/composite).
 func extractIndexes(table any) []indexInfo {
 	tableType := reflect.TypeOf(table)
@@ -480,7 +480,7 @@ func extractIndexes(table any) []indexInfo {
 			lp := strings.ToLower(part)
 			if lp == "idx" {
 				unnamed = append(unnamed, indexInfo{Cols: []string{colName}})
-			} else if lp == "unique_idx" {
+			} else if lp == "uidx" {
 				unnamed = append(unnamed, indexInfo{Cols: []string{colName}, Unique: true})
 			} else if strings.HasPrefix(lp, "idx:") {
 				idxName := strings.TrimPrefix(lp, "idx:")
@@ -489,8 +489,8 @@ func extractIndexes(table any) []indexInfo {
 				} else {
 					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}}
 				}
-			} else if strings.HasPrefix(lp, "unique_idx:") {
-				idxName := strings.TrimPrefix(lp, "unique_idx:")
+			} else if strings.HasPrefix(lp, "uidx:") {
+				idxName := strings.TrimPrefix(lp, "uidx:")
 				if existing, ok := named[idxName]; ok {
 					existing.Cols = append(existing.Cols, colName)
 				} else {

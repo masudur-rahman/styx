@@ -40,7 +40,7 @@ go test ./examples/
 | Soft delete / `WithDeleted` / `Restore` | [`example_softdelete_test.go`](examples/example_softdelete_test.go) |
 | JSON columns | [`example_json_test.go`](examples/example_json_test.go) |
 | JOIN with column projection + nested struct hydration | [`example_join_test.go`](examples/example_join_test.go) |
-| Relationships + `Preload` (has_many / belongs_to / many_to_many) | [`example_relations_test.go`](examples/example_relations_test.go) |
+| Relationships + `Preload` (o2m / m2o / m2m) | [`example_relations_test.go`](examples/example_relations_test.go) |
 | Transactions (commit / rollback) | [`example_transaction_test.go`](examples/example_transaction_test.go) |
 | Zero-value control (`req` / `MustFilterCols`) | [`example_zerovalue_test.go`](examples/example_zerovalue_test.go) |
 
@@ -115,11 +115,11 @@ db:"column_name,options"
 | `json`     | Store field as JSON              | `JSONB` (Postgres) / `TEXT` (SQLite)             | Marshals the field on writes, unmarshals on reads |
 | `archive`  | Soft-delete marker column        | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |
 | `idx`      | Secondary index                  | `CREATE INDEX` on `Sync`                         | -            |
-| `unique_idx` | Unique secondary index         | `CREATE UNIQUE INDEX` on `Sync`                  | -            |
+| `uidx` | Unique secondary index         | `CREATE UNIQUE INDEX` on `Sync`                  | -            |
 
 > Indexes can be named for composite coverage: fields sharing the same
-> `idx:<name>` (or `unique_idx:<name>`) are combined into one multi-column index.
-> `idx` / `unique_idx` without a name create a single-column index.
+> `idx:<name>` (or `uidx:<name>`) are combined into one multi-column index.
+> `idx` / `uidx` without a name create a single-column index.
 
 ### Relationship Options
 
@@ -129,9 +129,9 @@ Declared on struct fields that hold related entities (the column part is usually
 
 | Option | Extra keys | Meaning |
 |--------|-----------|---------|
-| `belongs_to`   | `fk:<col>`                          | to-one; foreign key `<col>` is on **this** table |
-| `has_many`     | `fk:<col>`                          | to-many; foreign key `<col>` is on the **child** table |
-| `many_to_many` | `join:<table> fk:<col> ref:<col>`   | to-many through a join table (`fk` → this side, `ref` → other side) |
+| `m2o`   | `fk:<col>`                          | to-one; foreign key `<col>` is on **this** table |
+| `o2m`     | `fk:<col>`                          | to-many; foreign key `<col>` is on the **child** table |
+| `m2m` | `join:<table> fk:<col> ref:<col>`   | to-many through a join table (`fk` → this side, `ref` → other side) |
 
 > Validation rules use a separate `validate:"..."` tag — see [Struct Validation](#struct-validation).
 
@@ -280,13 +280,13 @@ fields are ignored by DDL, INSERT, and UPDATE.
 type Author struct {
     ID    int64  `db:"id,pk autoincr"`
     Name  string `db:"name"`
-    Books []Book `db:"-,has_many fk:author_id"`
+    Books []Book `db:"-,o2m fk:author_id"`
 }
 type Book struct {
     ID       int64   `db:"id,pk autoincr"`
     AuthorID int64   `db:"author_id"`
-    Author   *Author `db:"-,belongs_to fk:author_id"`
-    Tags     []Tag   `db:"-,many_to_many join:book_tags fk:book_id ref:tag_id"`
+    Author   *Author `db:"-,m2o fk:author_id"`
+    Tags     []Tag   `db:"-,m2m join:book_tags fk:book_id ref:tag_id"`
 }
 
 db.Table("author").Preload("Books").ID(1).FindOne(ctx, &author)
@@ -295,9 +295,9 @@ db.Table("book").Preload("Author").Preload("Tags").FindMany(ctx, &books)
 
 | Option | Meaning |
 |--------|---------|
-| `has_many` + `fk:<col>`      | foreign key `<col>` lives on the child table |
-| `belongs_to` + `fk:<col>`    | foreign key `<col>` lives on this table |
-| `many_to_many` + `join:<table> fk:<col> ref:<col>` | linked through a join table |
+| `o2m` + `fk:<col>`      | foreign key `<col>` lives on the child table |
+| `m2o` + `fk:<col>`    | foreign key `<col>` lives on this table |
+| `m2m` + `join:<table> fk:<col> ref:<col>` | linked through a join table |
 
 #### Soft Delete
 Declaratively enable soft deletes using struct tags:
@@ -426,7 +426,7 @@ db.Sync(ctx, User{}, Budget{}, Wallet{})
 ```
 
 `Sync` is **additive and idempotent**: it creates missing tables, adds missing
-columns, and creates `idx` / `unique_idx` indexes. It never drops, renames, or
+columns, and creates `idx` / `uidx` indexes. It never drops, renames, or
 retypes columns. For destructive changes, see the
 [Migrations guide](docs/migrations.md).
 

@@ -13,9 +13,9 @@ type relTag struct{ Name string }
 type relParent struct {
 	ID       int64    `db:"id,pk"`
 	OwnerID  int64    `db:"owner_id"`
-	Owner    *relTag  `db:"-,belongs_to fk:owner_id"`
-	Children []relTag `db:"-,has_many fk:parent_id"`
-	Labels   []relTag `db:"-,many_to_many join:parent_labels fk:parent_id ref:label_id"`
+	Owner    *relTag  `db:"-,m2o fk:owner_id"`
+	Children []relTag `db:"-,o2m fk:parent_id"`
+	Labels   []relTag `db:"-,m2m join:parent_labels fk:parent_id ref:label_id"`
 	Ignored  string   `db:"ignored"`
 	Nested   relTag   `db:"nested,json"`
 }

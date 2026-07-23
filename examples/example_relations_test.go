@@ -6,7 +6,7 @@ import "fmt"
 type Author struct {
 	ID    int64  `db:"id,pk autoincr"`
 	Name  string `db:"name"`
-	Books []Book `db:"-,has_many fk:author_id"`
+	Books []Book `db:"-,o2m fk:author_id"`
 }
 
 // Book belongs to an Author and has many Tags through the book_tags join table.
@@ -14,8 +14,8 @@ type Book struct {
 	ID       int64   `db:"id,pk autoincr"`
 	AuthorID int64   `db:"author_id"`
 	Title    string  `db:"title"`
-	Author   *Author `db:"-,belongs_to fk:author_id"`
-	Tags     []Tag   `db:"-,many_to_many join:book_tags fk:book_id ref:tag_id"`
+	Author   *Author `db:"-,m2o fk:author_id"`
+	Tags     []Tag   `db:"-,m2m join:book_tags fk:book_id ref:tag_id"`
 }
 
 type Tag struct {
@@ -33,7 +33,7 @@ type BookTag struct {
 // TableName overrides the default snake-case name (book_tag).
 func (BookTag) TableName() string { return "book_tags" }
 
-// Example_relations shows Preload for has_many, belongs_to, and many_to_many.
+// Example_relations shows Preload for o2m, m2o, and m2m.
 // Each preload runs a single batched query (no N+1).
 func Example_relations() {
 	db := openDB()
@@ -51,12 +51,12 @@ func Example_relations() {
 		&BookTag{BookID: 2, TagID: 2},
 	})
 
-	// has_many: load an author's books.
+	// o2m: load an author's books.
 	var author Author
 	db.Table("author").Preload("Books").ID(1).FindOne(ctx, &author)
 	fmt.Printf("%s has %d books\n", author.Name, len(author.Books))
 
-	// belongs_to + many_to_many: load a book's author and tags.
+	// m2o + m2m: load a book's author and tags.
 	var book Book
 	db.Table("book").Preload("Author").Preload("Tags").ID(1).FindOne(ctx, &book)
 	fmt.Printf("%q by %s, tags:", book.Title, book.Author.Name)

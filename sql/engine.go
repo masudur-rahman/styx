@@ -71,7 +71,7 @@ type Engine interface {
 	Paginate(page, perPage int64) Engine
 
 	// Preload eager-loads the named association (a struct field declared with a
-	// has_many/belongs_to/many_to_many db tag) after the read, using batched
+	// o2m/m2o/m2m db tag) after the read, using batched
 	// queries to avoid N+1.
 	Preload(assoc string) Engine
 

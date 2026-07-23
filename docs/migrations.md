@@ -12,7 +12,7 @@ tool). This document explains the boundary and the recommended workflow.
 - Creates tables that do not exist (`CREATE TABLE IF NOT EXISTS`).
 - Adds columns that are present in the struct but missing in the table
   (`ALTER TABLE ... ADD COLUMN`).
-- Creates indexes declared with the `idx` / `unique_idx` tags
+- Creates indexes declared with the `idx` / `uidx` tags
   (`CREATE INDEX IF NOT EXISTS`).
 
 ```go
