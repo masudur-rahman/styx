@@ -510,7 +510,7 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	return b.String()
 }
 
-func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any, obs isql.Observer) (err error) {
+func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any, obs isql.Observer, cache *core.StmtCache) (err error) {
 	if stmt.showSQL {
 		log.Printf("Read Query: query: %v, args: %v\n", query, stmt.args)
 	}
@@ -519,9 +519,12 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 
 	var rows *sql.Rows
 
-	if tx != nil {
+	switch {
+	case tx != nil:
 		rows, err = tx.QueryContext(ctx, query, stmt.args...)
-	} else {
+	case cache != nil:
+		rows, err = cache.QueryContext(ctx, conn, query, stmt.args...)
+	default:
 		rows, err = conn.QueryContext(ctx, query, stmt.args...)
 	}
 	if err != nil {
@@ -589,7 +592,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 }
 
-func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer) (id any, err error) {
+func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (id any, err error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -601,12 +604,25 @@ func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx 
 	start := time.Now()
 	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	if tx != nil {
-		err = tx.QueryRowContext(ctx, query, stmt.args...).Scan(&id)
-	} else {
-		err = conn.QueryRowContext(ctx, query, stmt.args...).Scan(&id)
+	row, err := stmt.queryRow(ctx, conn, tx, cache, query)
+	if err != nil {
+		return nil, err
 	}
+	err = row.Scan(&id)
 	return id, err
+}
+
+// queryRow runs a single-row query over the transaction, the statement cache, or
+// the raw connection, in that order of preference.
+func (stmt *Statement) queryRow(ctx context.Context, conn *sql.DB, tx *sql.Tx, cache *core.StmtCache, query string) (*sql.Row, error) {
+	switch {
+	case tx != nil:
+		return tx.QueryRowContext(ctx, query, stmt.args...), nil
+	case cache != nil:
+		return cache.QueryRowContext(ctx, conn, query, stmt.args...)
+	default:
+		return conn.QueryRowContext(ctx, query, stmt.args...), nil
+	}
 }
 
 // GenerateBulkInsertQuery builds a single multi-row INSERT for docs that share
@@ -676,7 +692,7 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 
 // ExecuteBulkInsertQuery runs a multi-row INSERT and returns the generated
 // primary keys in row order.
-func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer) (ids []any, err error) {
+func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (ids []any, err error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -689,9 +705,12 @@ func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB,
 	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
 	var rows *sql.Rows
-	if tx != nil {
+	switch {
+	case tx != nil:
 		rows, err = tx.QueryContext(ctx, query, stmt.args...)
-	} else {
+	case cache != nil:
+		rows, err = cache.QueryContext(ctx, conn, query, stmt.args...)
+	default:
 		rows, err = conn.QueryContext(ctx, query, stmt.args...)
 	}
 	if err != nil {
@@ -709,19 +728,21 @@ func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB,
 	return ids, rows.Err()
 }
 
-func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer) (res sql.Result, err error) {
+func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (res sql.Result, err error) {
 	if stmt.showSQL {
 		log.Printf("Write Query: query: %v, args: %v\n", query, stmt.args)
 	}
 	start := time.Now()
 	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	if tx != nil {
+	switch {
+	case tx != nil:
 		res, err = tx.ExecContext(ctx, query, stmt.args...)
-		return res, err
+	case cache != nil:
+		res, err = cache.ExecContext(ctx, conn, query, stmt.args...)
+	default:
+		res, err = conn.ExecContext(ctx, query, stmt.args...)
 	}
-
-	res, err = conn.ExecContext(ctx, query, stmt.args...)
 	return res, err
 }
 

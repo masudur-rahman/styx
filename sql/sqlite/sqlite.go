@@ -21,14 +21,16 @@ type SQLite struct {
 	tx        *sql.Tx
 	statement lib.Statement
 	observer  isql.Observer
+	cache     *core.StmtCache
 }
 
-// NewSQLite returns a SQLite engine over conn. An optional Observer receives a
-// callback for every executed statement (for logging, metrics, or tracing).
-func NewSQLite(conn *sql.DB, observer ...isql.Observer) SQLite {
-	sq := SQLite{conn: conn}
-	if len(observer) > 0 {
-		sq.observer = observer[0]
+// NewSQLite returns a SQLite engine over conn. Options such as WithObserver and
+// WithStmtCache configure cross-cutting behaviour.
+func NewSQLite(conn *sql.DB, opts ...isql.Option) SQLite {
+	cfg := isql.BuildConfig(opts...)
+	sq := SQLite{conn: conn, observer: cfg.Observer}
+	if cfg.StmtCache {
+		sq.cache = core.NewStmtCache()
 	}
 	return sq
 }
@@ -284,7 +286,7 @@ func (sq SQLite) Restore(ctx context.Context, filter ...any) error {
 	}
 
 	query := sq.statement.GenerateRestoreQuery()
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return err
 	}
@@ -307,7 +309,7 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 	}
 
 	query := sq.statement.GenerateReadQuery(document)
-	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document, sq.observer)
+	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document, sq.observer, sq.cache)
 	if err == nil {
 		if err = core.RunAfterFind(ctx, document); err != nil {
 			return false, err
@@ -329,7 +331,7 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 	sq.statement.GenerateWhereClause(filter...)
 
 	query := sq.statement.GenerateReadQuery(documents)
-	if err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents, sq.observer); err != nil {
+	if err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents, sq.observer, sq.cache); err != nil {
 		return err
 	}
 	if err := core.RunAfterFindResults(ctx, documents); err != nil {
@@ -350,7 +352,7 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 	pkCol := core.GetPKColumn(document)
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
-	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query, sq.observer)
+	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +383,7 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 	pkCol := core.GetPKColumn(documents[0])
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateBulkInsertQuery(documents)
-	ids, err := sq.statement.ExecuteBulkInsertQuery(ctx, sq.conn, sq.tx, query, sq.observer)
+	ids, err := sq.statement.ExecuteBulkInsertQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +486,7 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 	}
 
 	query := sq.statement.GenerateUpdateQuery(document)
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return err
 	}
@@ -516,7 +518,7 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	} else {
 		query = sq.statement.GenerateDeleteQuery()
 	}
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return err
 	}

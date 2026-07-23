@@ -19,14 +19,16 @@ type Postgres struct {
 	tx        *sql.Tx
 	statement lib.Statement
 	observer  isql.Observer
+	cache     *core.StmtCache
 }
 
-// NewPostgres returns a Postgres engine over conn. An optional Observer receives
-// a callback for every executed statement (for logging, metrics, or tracing).
-func NewPostgres(conn *sql.DB, observer ...isql.Observer) Postgres {
-	pg := Postgres{conn: conn}
-	if len(observer) > 0 {
-		pg.observer = observer[0]
+// NewPostgres returns a Postgres engine over conn. Options such as WithObserver
+// and WithStmtCache configure cross-cutting behaviour.
+func NewPostgres(conn *sql.DB, opts ...isql.Option) Postgres {
+	cfg := isql.BuildConfig(opts...)
+	pg := Postgres{conn: conn, observer: cfg.Observer}
+	if cfg.StmtCache {
+		pg.cache = core.NewStmtCache()
 	}
 	return pg
 }
@@ -282,7 +284,7 @@ func (pg Postgres) Restore(ctx context.Context, filter ...any) error {
 	}
 
 	query := pg.statement.GenerateRestoreQuery()
-	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer)
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
 	if err != nil {
 		return err
 	}
@@ -305,7 +307,7 @@ func (pg Postgres) FindOne(ctx context.Context, document any, filter ...any) (bo
 	}
 
 	query := pg.statement.GenerateReadQuery(document)
-	err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, document, pg.observer)
+	err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, document, pg.observer, pg.cache)
 	if err == nil {
 		if err = core.RunAfterFind(ctx, document); err != nil {
 			return false, err
@@ -327,7 +329,7 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 	pg.statement.GenerateWhereClause(filter...)
 
 	query := pg.statement.GenerateReadQuery(documents)
-	if err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents, pg.observer); err != nil {
+	if err := pg.statement.ExecuteReadQuery(ctx, pg.conn, pg.tx, query, documents, pg.observer, pg.cache); err != nil {
 		return err
 	}
 	if err := core.RunAfterFindResults(ctx, documents); err != nil {
@@ -348,7 +350,7 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 	pkCol := core.GetPKColumn(document)
 	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateInsertQuery(document)
-	id, err = pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query, pg.observer)
+	id, err = pg.statement.ExecuteInsertQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +381,7 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 	pkCol := core.GetPKColumn(documents[0])
 	pg.statement.PKColumn(pkCol)
 	query := pg.statement.GenerateBulkInsertQuery(documents)
-	ids, err := pg.statement.ExecuteBulkInsertQuery(ctx, pg.conn, pg.tx, query, pg.observer)
+	ids, err := pg.statement.ExecuteBulkInsertQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +484,7 @@ func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
 	}
 
 	query := pg.statement.GenerateUpdateQuery(document)
-	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer)
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
 	if err != nil {
 		return err
 	}
@@ -514,7 +516,7 @@ func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
 	} else {
 		query = pg.statement.GenerateDeleteQuery()
 	}
-	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer)
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
 	if err != nil {
 		return err
 	}

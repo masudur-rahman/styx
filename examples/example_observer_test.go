@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	isql "github.com/masudur-rahman/styx/sql"
 	"github.com/masudur-rahman/styx/sql/sqlite"
 )
 
@@ -30,7 +31,7 @@ func Example_observer() {
 		panic(err)
 	}
 	conn.SetMaxOpenConns(1)
-	db := sqlite.NewSQLite(conn, obs)
+	db := sqlite.NewSQLite(conn, isql.WithObserver(obs))
 
 	db.Sync(ctx, Account{})
 	db.Table("account").InsertOne(ctx, &Account{Name: "alice"})
