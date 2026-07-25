@@ -126,6 +126,8 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 					isComposite = true
 				case "AUTOINCR":
 					autoincr = true
+				case "NOTNULL":
+					constraints = append(constraints, "NOT NULL")
 				case "REQ":
 					// handled at query generation time, no DDL effect
 				case "JSON":

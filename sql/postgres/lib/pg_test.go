@@ -188,3 +188,18 @@ func TestGenerateCountQuery_postgresExcludesSoftDeleted(t *testing.T) {
 	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
 	assert.Contains(t, q, "deleted_at IS NULL")
 }
+
+func TestCreateTableQuery_notNull(t *testing.T) {
+	type notNullDoc struct {
+		ID   int64  `db:"id,pk autoincr"`
+		Name string `db:"name,notnull"`
+		Note string `db:"note"`
+	}
+	fields, err := getTableInfo(notNullDoc{})
+	assert.NoError(t, err)
+
+	query := createTableQuery("not_null_doc", fields)
+
+	assert.Contains(t, query, "NOT NULL")
+	assert.Contains(t, query, "name")
+}

@@ -228,3 +228,24 @@ func TestIgnoreTag_notPersisted(t *testing.T) {
 	assert.Equal(t, "gear", got.Name)
 	assert.Empty(t, got.Computed, "ignored field is never stored or scanned")
 }
+
+type account struct {
+	ID   int64  `db:"id,pk autoincr"`
+	Name string `db:"name,notnull"`
+}
+
+func TestNotNull_rejectsMissingValue(t *testing.T) {
+	ctx := context.Background()
+	conn, err := lib.GetSQLiteConnection(":memory:")
+	assert.NoError(t, err)
+	db := sqlite.NewSQLite(conn)
+	assert.NoError(t, db.Sync(ctx, account{}))
+
+	// Name omitted (zero value) → column left NULL → NOT NULL constraint fails.
+	_, err = db.Table("account").InsertOne(ctx, &account{})
+	assert.Error(t, err, "NOT NULL column must reject a missing value")
+
+	// A populated NOT NULL column inserts fine.
+	_, err = db.Table("account").InsertOne(ctx, &account{Name: "acme"})
+	assert.NoError(t, err)
+}

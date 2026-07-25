@@ -117,6 +117,8 @@ db:"column_name,options"
 | `autoincr` | Auto-increment                   | `INTEGER PRIMARY KEY AUTOINCREMENT` (SQLite) / `SERIAL`/`BIGSERIAL` (Postgres) | -            |
 | `uq`       | Unique constraint (single column)| Adds `UNIQUE` constraint                         | -            |
 | `uqs`      | Unique composite group           | Adds composite `UNIQUE(col1, col2, ...)` across all `uqs` fields | -            |
+| `notnull`  | Non-nullable column              | Adds `NOT NULL` constraint                       | -            |
+| `-`        | Ignore field (column name `-`)   | Excluded from the table entirely                 | Never written, read, or scanned — for in-memory-only fields |
 | `req`      | Required (never skip zero-value) | None                                             | Always includes the field in WHERE, INSERT, and UPDATE queries, even when zero-valued |
 | `json`     | Store field as JSON              | `JSONB` (Postgres) / `TEXT` (SQLite)             | Marshals the field on writes, unmarshals on reads |
 | `archive`  | Soft-delete marker column        | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |
