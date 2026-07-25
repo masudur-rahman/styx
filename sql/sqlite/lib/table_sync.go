@@ -44,7 +44,7 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 			fmt.Println("non-exported fields: ", fieldType.Name)
 			continue
 		}
-		if core.IsRelationField(fieldType) {
+		if core.IsRelationField(fieldType) || core.IsIgnoredField(fieldType) {
 			continue
 		}
 

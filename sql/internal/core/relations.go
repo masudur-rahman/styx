@@ -78,6 +78,17 @@ func IsRelationField(f reflect.StructField) bool {
 	return ok
 }
 
+// IsIgnoredField reports whether a struct field is marked non-persistent with a
+// db:"-" tag, so it is excluded from DDL, INSERT, UPDATE, and result scanning.
+func IsIgnoredField(f reflect.StructField) bool {
+	dbTag := f.Tag.Get("db")
+	if dbTag == "" {
+		return false
+	}
+	parts := strings.SplitN(dbTag, ",", 2)
+	return parts[0] == "-"
+}
+
 // parseRelation extracts a RelationInfo from a field's db tag options.
 func parseRelation(f reflect.StructField) (RelationInfo, bool) {
 	dbTag := f.Tag.Get("db")

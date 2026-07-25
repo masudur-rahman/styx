@@ -71,3 +71,37 @@ func TestFindRelation_matchesByFieldOrSnake(t *testing.T) {
 	_, ok = findRelation(rels, "nope")
 	assert.False(t, ok)
 }
+
+func TestIsIgnoredField(t *testing.T) {
+	type sample struct {
+		ID    int64  `db:"id,pk"`
+		Name  string `db:"name"`
+		Temp  string `db:"-"`
+		NoTag string
+		Rel   string `db:"-,o2m,fk:x"`
+	}
+	t.Helper()
+	typ := reflect.TypeOf(sample{})
+
+	assert.False(t, IsIgnoredField(typ.Field(0)), "id is persistent")
+	assert.False(t, IsIgnoredField(typ.Field(1)), "name is persistent")
+	assert.True(t, IsIgnoredField(typ.Field(2)), `db:"-" is ignored`)
+	assert.False(t, IsIgnoredField(typ.Field(3)), "untagged field is not ignored by db:-")
+	assert.True(t, IsIgnoredField(typ.Field(4)), `relation field also has "-" column`)
+}
+
+func TestGetDBFieldMap_excludesIgnored(t *testing.T) {
+	type sample struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
+		Temp string `db:"-"`
+	}
+	m := GetDBFieldMap(sample{})
+
+	_, hasID := m["id"]
+	_, hasName := m["name"]
+	_, hasDash := m["-"]
+	assert.True(t, hasID)
+	assert.True(t, hasName)
+	assert.False(t, hasDash, `db:"-" field must not appear in the field map`)
+}

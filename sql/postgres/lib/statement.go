@@ -635,7 +635,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	var cols, placeholders []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		if core.IsRelationField(field) {
+		if core.IsRelationField(field) || core.IsIgnoredField(field) {
 			continue
 		}
 		col := core.GetFieldName(field)
@@ -714,7 +714,7 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 				continue
 			}
 			field := rv.Type().Field(idx)
-			if core.IsRelationField(field) {
+			if core.IsRelationField(field) || core.IsIgnoredField(field) {
 				continue
 			}
 			col := core.GetFieldName(field)
@@ -841,7 +841,7 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	freshCounter := 0
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		if core.IsRelationField(field) {
+		if core.IsRelationField(field) || core.IsIgnoredField(field) {
 			continue
 		}
 		col := core.GetFieldName(field)

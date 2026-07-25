@@ -199,3 +199,32 @@ func TestCount_filtersAndSoftDelete(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), all)
 }
+
+type widget struct {
+	ID       int64  `db:"id,pk autoincr"`
+	Name     string `db:"name"`
+	Computed string `db:"-"` // in-memory only, never persisted
+}
+
+func TestIgnoreTag_notPersisted(t *testing.T) {
+	ctx := context.Background()
+	conn, err := lib.GetSQLiteConnection(":memory:")
+	assert.NoError(t, err)
+	db := sqlite.NewSQLite(conn)
+
+	// Sync succeeds: a db:"-" field must not emit an invalid "-" column in DDL.
+	assert.NoError(t, db.Sync(ctx, widget{}))
+
+	w := &widget{Name: "gear", Computed: "transient"}
+	_, err = db.Table("widget").InsertOne(ctx, w)
+	assert.NoError(t, err)
+
+	// The ignored field is neither stored nor scanned back: it round-trips as zero
+	// while persistent columns survive.
+	var got widget
+	found, err := db.Table("widget").ID(w.ID).FindOne(ctx, &got)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "gear", got.Name)
+	assert.Empty(t, got.Computed, "ignored field is never stored or scanned")
+}
