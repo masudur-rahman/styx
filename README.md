@@ -35,6 +35,7 @@ go test ./examples/
 | CRUD + filters (ID / Where / struct filter / Columns) | [`example_crud_test.go`](examples/example_crud_test.go) |
 | Ordering, pagination, LIKE / IN, aggregates + GROUP BY | [`example_query_test.go`](examples/example_query_test.go) |
 | Row count (`Count`, soft-delete aware) | [`example_count_test.go`](examples/example_count_test.go) |
+| Ignore (`db:"-"`) and `notnull` tags | [`example_tags_test.go`](examples/example_tags_test.go) |
 | Bulk insert (single multi-row `INSERT`) | [`example_bulk_test.go`](examples/example_bulk_test.go) |
 | Lifecycle hooks (`BeforeCreate`, `AfterFind`, …) | [`example_hooks_test.go`](examples/example_hooks_test.go) |
 | Validation (tag rules + custom `Validate()`) | [`example_validation_test.go`](examples/example_validation_test.go) |
@@ -117,6 +118,8 @@ db:"column_name,options"
 | `autoincr` | Auto-increment                   | `INTEGER PRIMARY KEY AUTOINCREMENT` (SQLite) / `SERIAL`/`BIGSERIAL` (Postgres) | -            |
 | `uq`       | Unique constraint (single column)| Adds `UNIQUE` constraint                         | -            |
 | `uqs`      | Unique composite group           | Adds composite `UNIQUE(col1, col2, ...)` across all `uqs` fields | -            |
+| `notnull`  | Non-nullable column              | Adds `NOT NULL` constraint                       | -            |
+| `-`        | Ignore field (column name `-`)   | Excluded from the table entirely                 | Never written, read, or scanned — for in-memory-only fields |
 | `req`      | Required (never skip zero-value) | None                                             | Always includes the field in WHERE, INSERT, and UPDATE queries, even when zero-valued |
 | `json`     | Store field as JSON              | `JSONB` (Postgres) / `TEXT` (SQLite)             | Marshals the field on writes, unmarshals on reads |
 | `archive`  | Soft-delete marker column        | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |

@@ -72,6 +72,9 @@ func GetDBFieldMap(doc any) map[string]int {
 		if !field.IsExported() {
 			continue
 		}
+		if IsIgnoredField(field) {
+			continue
+		}
 
 		colName := field.Name
 		if dbTag := field.Tag.Get("db"); dbTag != "" {

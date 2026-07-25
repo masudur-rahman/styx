@@ -44,7 +44,7 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 			fmt.Println("non-exported fields: ", fieldType.Name)
 			continue
 		}
-		if core.IsRelationField(fieldType) {
+		if core.IsRelationField(fieldType) || core.IsIgnoredField(fieldType) {
 			continue
 		}
 
@@ -126,6 +126,8 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 					isComposite = true
 				case "AUTOINCR":
 					autoincr = true
+				case "NOTNULL":
+					constraints = append(constraints, "NOT NULL")
 				case "REQ":
 					// handled at query generation time, no DDL effect
 				case "JSON":
