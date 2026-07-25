@@ -9,6 +9,7 @@ import (
 
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 	"github.com/masudur-rahman/styx/sql/sqlite/lib"
 	"github.com/masudur-rahman/styx/validation"
 
@@ -19,10 +20,19 @@ type SQLite struct {
 	conn      *sql.DB
 	tx        *sql.Tx
 	statement lib.Statement
+	observer  isql.Observer
+	cache     *core.StmtCache
 }
 
-func NewSQLite(conn *sql.DB) SQLite {
-	return SQLite{conn: conn}
+// NewSQLite returns a SQLite engine over conn. Options such as WithObserver and
+// WithStmtCache configure cross-cutting behaviour.
+func NewSQLite(conn *sql.DB, opts ...isql.Option) SQLite {
+	cfg := isql.BuildConfig(opts...)
+	sq := SQLite{conn: conn, observer: cfg.Observer}
+	if cfg.StmtCache {
+		sq.cache = core.NewStmtCache()
+	}
+	return sq
 }
 
 var _ isql.Engine = SQLite{}
@@ -157,34 +167,54 @@ func (sq SQLite) NotExists(subquery string, args ...any) isql.Engine {
 	return sq
 }
 
-func (sq SQLite) Count(col string, alias ...string) isql.Engine {
-	sq.statement.Count(col, alias...)
+func (sq SQLite) Select(aggs ...isql.Aggregate) isql.Engine {
+	exprs := make([]string, len(aggs))
+	for i, a := range aggs {
+		exprs[i] = a.Expr()
+	}
+	sq.statement.Select(exprs...)
 	return sq
 }
 
-func (sq SQLite) Sum(col string, alias ...string) isql.Engine {
-	sq.statement.Sum(col, alias...)
+func (sq SQLite) Preload(assoc string) isql.Engine {
+	sq.statement.Preload(assoc)
 	return sq
 }
 
-func (sq SQLite) Avg(col string, alias ...string) isql.Engine {
-	sq.statement.Avg(col, alias...)
-	return sq
-}
-
-func (sq SQLite) Min(col string, alias ...string) isql.Engine {
-	sq.statement.Min(col, alias...)
-	return sq
-}
-
-func (sq SQLite) Max(col string, alias ...string) isql.Engine {
-	sq.statement.Max(col, alias...)
-	return sq
+// preload eager-loads any registered associations onto docs using a clean
+// engine (same connection/transaction, fresh statement) for batched queries.
+func (sq SQLite) preload(ctx context.Context, docs any) error {
+	preloads := sq.statement.Preloads()
+	if len(preloads) == 0 {
+		return nil
+	}
+	base := sq
+	base.statement = lib.Statement{}
+	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
 func (sq SQLite) Paginate(page, perPage int64) isql.Engine {
 	sq.statement.Paginate(page, perPage)
 	return sq
+}
+
+// With registers sub as a named CTE. sub is compiled to a subquery in place;
+// a non-SQLite Engine is ignored (returns the receiver unchanged).
+func (sq SQLite) With(name string, sub isql.Engine) isql.Engine {
+	s, ok := sub.(SQLite)
+	if !ok {
+		return sq
+	}
+	subSQL, subArgs := s.buildSubquery()
+	sq.statement.With(name, subSQL, subArgs)
+	return sq
+}
+
+// buildSubquery compiles the current statement into a SELECT string and its
+// args without executing, for use as a CTE or subquery body.
+func (sq SQLite) buildSubquery() (string, []any) {
+	query := sq.statement.GenerateReadQuery(nil)
+	return query, sq.statement.Args()
 }
 
 func (sq SQLite) Join(table, condition string) isql.Engine {
@@ -219,7 +249,7 @@ func (sq SQLite) WithDeleted() isql.Engine {
 
 // detectSoftDelete sets soft delete column from struct tags if present.
 func (s SQLite) detectSoftDelete(doc any) SQLite {
-	if col := isql.ExtractSoftDeleteColumn(doc); col != "" {
+	if col := core.ExtractSoftDeleteColumn(doc); col != "" {
 		s.statement.SoftDeleteCol(col)
 	}
 	return s
@@ -231,13 +261,16 @@ func (sq SQLite) ForceDelete(ctx context.Context, filter ...any) error {
 }
 
 func (sq SQLite) Restore(ctx context.Context, filter ...any) error {
+	if len(filter) > 0 {
+		sq = sq.detectSoftDelete(filter[0])
+	}
 	sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
 		return err
 	}
 
 	query := sq.statement.GenerateRestoreQuery()
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return err
 	}
@@ -260,8 +293,14 @@ func (sq SQLite) FindOne(ctx context.Context, document any, filter ...any) (bool
 	}
 
 	query := sq.statement.GenerateReadQuery(document)
-	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document)
+	err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, document, sq.observer, sq.cache)
 	if err == nil {
+		if err = core.RunAfterFind(ctx, document); err != nil {
+			return false, err
+		}
+		if err = sq.preload(ctx, document); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	if err == sql.ErrNoRows {
@@ -276,42 +315,81 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 	sq.statement.GenerateWhereClause(filter...)
 
 	query := sq.statement.GenerateReadQuery(documents)
-	return sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents)
+	if err := sq.statement.ExecuteReadQuery(ctx, sq.conn, sq.tx, query, documents, sq.observer, sq.cache); err != nil {
+		return err
+	}
+	if err := core.RunAfterFindResults(ctx, documents); err != nil {
+		return err
+	}
+	return sq.preload(ctx, documents)
+}
+
+// Count returns the number of rows in the table set via Table, matching any
+// chained conditions. Soft-deleted rows are excluded unless WithDeleted was set.
+func (sq SQLite) Count(ctx context.Context) (int64, error) {
+	sq.statement.GenerateWhereClause()
+
+	query := sq.statement.GenerateCountQuery()
+	return sq.statement.ExecuteCountQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 }
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
+	if err := core.RunBeforeCreate(ctx, document); err != nil {
+		return nil, err
+	}
 	if sq.statement.ShouldValidate() {
 		if err := validation.Validate(document); err != nil {
 			return nil, err
 		}
 	}
-	pkCol := isql.GetPKColumn(document)
+	pkCol := core.GetPKColumn(document)
 	sq.statement.PKColumn(pkCol)
 	query := sq.statement.GenerateInsertQuery(document)
-	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
+	id, err = sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return nil, err
 	}
-	return assignID(document, id)
+	if _, err = assignID(document, id); err != nil {
+		return nil, err
+	}
+	if err = core.RunAfterCreate(ctx, document); err != nil {
+		return nil, err
+	}
+	return id, nil
 }
 
 func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error) {
-	var ids []any
+	if len(documents) == 0 {
+		return nil, nil
+	}
 	for _, doc := range documents {
-		pkCol := isql.GetPKColumn(doc)
-		sq.statement.PKColumn(pkCol)
-		query := sq.statement.GenerateInsertQuery(doc)
-		id, err := sq.statement.ExecuteInsertQuery(ctx, sq.conn, sq.tx, query)
-
-		if err != nil {
+		if err := core.RunBeforeCreate(ctx, doc); err != nil {
 			return nil, err
 		}
+		if sq.statement.ShouldValidate() {
+			if err := validation.Validate(doc); err != nil {
+				return nil, err
+			}
+		}
+	}
 
-		_, err = assignID(doc, id)
-		if err != nil {
+	pkCol := core.GetPKColumn(documents[0])
+	sq.statement.PKColumn(pkCol)
+	query := sq.statement.GenerateBulkInsertQuery(documents)
+	ids, err := sq.statement.ExecuteBulkInsertQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, doc := range documents {
+		if i < len(ids) {
+			if _, err := assignID(doc, ids[i]); err != nil {
+				return nil, err
+			}
+		}
+		if err := core.RunAfterCreate(ctx, doc); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
 	}
 
 	return ids, nil
@@ -387,6 +465,9 @@ func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
 }
 
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
+	if err := core.RunBeforeUpdate(ctx, document); err != nil {
+		return err
+	}
 	if sq.statement.ShouldValidate() {
 		if err := validation.Validate(document); err != nil {
 			return err
@@ -398,7 +479,7 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 	}
 
 	query := sq.statement.GenerateUpdateQuery(document)
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return err
 	}
@@ -409,12 +490,15 @@ func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
 	}
-	return nil
+	return core.RunAfterUpdate(ctx, document)
 }
 
 func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	if len(filter) > 0 {
 		sq = sq.detectSoftDelete(filter[0])
+		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
+			return err
+		}
 	}
 	sq.statement.GenerateWhereClause(filter...)
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
@@ -427,7 +511,7 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	} else {
 		query = sq.statement.GenerateDeleteQuery()
 	}
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query)
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 	if err != nil {
 		return err
 	}
@@ -438,14 +522,23 @@ func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
 	if rowsAffected == 0 {
 		return dberr.ErrNotFound
 	}
+	if len(filter) > 0 {
+		return core.RunAfterDelete(ctx, filter[0])
+	}
 	return nil
 }
 
 func (sq SQLite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if sq.tx != nil {
+		return sq.tx.QueryContext(ctx, query, args...)
+	}
 	return sq.conn.QueryContext(ctx, query, args...)
 }
 
 func (sq SQLite) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if sq.tx != nil {
+		return sq.tx.ExecContext(ctx, query, args...)
+	}
 	return sq.conn.ExecContext(ctx, query, args...)
 }
 
@@ -454,6 +547,7 @@ func (sq SQLite) Sync(ctx context.Context, tables ...any) error {
 		if err := lib.SyncTable(ctx, sq.conn, table); err != nil {
 			return err
 		}
+		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
 	}
 
 	return nil
@@ -465,6 +559,11 @@ func (sq SQLite) DropTable(ctx context.Context, name string) error {
 
 func (sq SQLite) Close() error {
 	return sq.conn.Close()
+}
+
+// Stats returns live statistics for the underlying connection pool.
+func (sq SQLite) Stats() sql.DBStats {
+	return sq.conn.Stats()
 }
 
 func (sq SQLite) cleanup() {

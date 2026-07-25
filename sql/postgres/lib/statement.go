@@ -9,10 +9,19 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 )
+
+// observeQuery reports a completed statement to obs when one is configured.
+func observeQuery(ctx context.Context, obs isql.Observer, query string, args []any, start time.Time, err error) {
+	if obs != nil {
+		obs.OnQuery(ctx, query, args, time.Since(start), err)
+	}
+}
 
 type Statement struct {
 	table            string
@@ -40,6 +49,59 @@ type Statement struct {
 	forceDelete      bool
 	validate         bool
 	joins            []string
+	preloads         []string
+	ctes             []cteClause
+}
+
+// cteClause is a single named Common Table Expression (WITH name AS (sql)).
+// Its args are merged into the statement's args at registration time, so the
+// clause only needs to carry the renumbered SQL body.
+type cteClause struct {
+	name string
+	sql  string
+}
+
+// placeholderRe matches Postgres positional placeholders ($1, $2, ...).
+var placeholderRe = regexp.MustCompile(`\$(\d+)`)
+
+// Preload registers an association name to be eager-loaded after the read.
+func (stmt *Statement) Preload(assoc string) *Statement {
+	stmt.preloads = append(stmt.preloads, assoc)
+	return stmt
+}
+
+// Preloads returns the registered preload association names.
+func (stmt *Statement) Preloads() []string {
+	return stmt.preloads
+}
+
+// Args returns the accumulated positional arguments for the current statement.
+// Used to compile a statement into a subquery for CTE composition.
+func (stmt *Statement) Args() []any {
+	return stmt.args
+}
+
+// With registers a named Common Table Expression whose body is the already
+// compiled subSQL with its subArgs. Because Postgres placeholders reference args
+// by number, the sub's $1..$k are shifted by the current arg count and its args
+// are appended, keeping placeholder numbers aligned with arg positions.
+func (stmt *Statement) With(name, subSQL string, subArgs []any) *Statement {
+	renumbered := renumberPlaceholders(subSQL, stmt.argCounter)
+	stmt.argCounter += len(subArgs)
+	stmt.args = append(stmt.args, subArgs...)
+	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: renumbered})
+	return stmt
+}
+
+// renumberPlaceholders shifts every $N placeholder in q up by offset.
+func renumberPlaceholders(q string, offset int) string {
+	if offset == 0 {
+		return q
+	}
+	return placeholderRe.ReplaceAllStringFunc(q, func(m string) string {
+		n, _ := strconv.Atoi(m[1:])
+		return "$" + strconv.Itoa(n+offset)
+	})
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -88,7 +150,7 @@ func (stmt *Statement) Where(cond string, args ...any) *Statement {
 }
 
 func (stmt *Statement) generateWhereClauseFromID() string {
-	if isql.IsZeroValue(stmt.id) {
+	if core.IsZeroValue(stmt.id) {
 		return ""
 	}
 	stmt.argCounter++
@@ -107,15 +169,15 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 
 	for idx := 0; idx < val.NumField(); idx++ {
 		field := val.Type().Field(idx)
-		col := isql.GetFieldName(field)
+		col := core.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustFilterColMap[col] || isql.HasReqTag(field) || !val.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || core.HasReqTag(field) || !val.Field(idx).IsZero()) {
 			continue
 		}
 
 		stmt.argCounter++
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, stmt.argCounter))
-		stmt.args = append(stmt.args, isql.SQLArgValue(field, val.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(field, val.Field(idx)))
 	}
 
 	return strings.Join(conditions, " AND ")
@@ -295,42 +357,11 @@ func (stmt *Statement) NotExists(subquery string, args ...any) *Statement {
 	return stmt
 }
 
-// Count adds a COUNT aggregate to the SELECT clause.
-func (stmt *Statement) Count(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("COUNT", col, alias...))
+// Select appends aggregate expressions (already rendered as SQL) to the SELECT
+// clause.
+func (stmt *Statement) Select(exprs ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, exprs...)
 	return stmt
-}
-
-// Sum adds a SUM aggregate to the SELECT clause.
-func (stmt *Statement) Sum(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("SUM", col, alias...))
-	return stmt
-}
-
-// Avg adds an AVG aggregate to the SELECT clause.
-func (stmt *Statement) Avg(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("AVG", col, alias...))
-	return stmt
-}
-
-// Min adds a MIN aggregate to the SELECT clause.
-func (stmt *Statement) Min(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("MIN", col, alias...))
-	return stmt
-}
-
-// Max adds a MAX aggregate to the SELECT clause.
-func (stmt *Statement) Max(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("MAX", col, alias...))
-	return stmt
-}
-
-func formatAggregate(fn, col string, alias ...string) string {
-	expr := fmt.Sprintf("%s(%s)", fn, col)
-	if len(alias) > 0 && alias[0] != "" {
-		expr += " as " + alias[0]
-	}
-	return expr
 }
 
 // Paginate sets LIMIT and OFFSET for page-based pagination.
@@ -425,6 +456,20 @@ func (stmt *Statement) GenerateRestoreQuery() string {
 }
 
 // GenerateReadQuery builds a SELECT query from the current statement state.
+// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix. CTE args
+// were already merged into stmt.args by With, so only the SQL text is assembled
+// here. Returns "" when no CTEs are registered.
+func (stmt *Statement) buildCTEPrefix() string {
+	if len(stmt.ctes) == 0 {
+		return ""
+	}
+	parts := make([]string, len(stmt.ctes))
+	for i, c := range stmt.ctes {
+		parts[i] = fmt.Sprintf("%s AS (%s)", c.name, c.sql)
+	}
+	return "WITH " + strings.Join(parts, ", ") + " "
+}
+
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string
 	if len(stmt.aggregates) > 0 {
@@ -442,7 +487,7 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 		if val.Kind() == reflect.Slice {
 			doc = val.Index(0).Interface()
 		}
-		stmt.table = isql.GetTableName(doc)
+		stmt.table = core.GetTableName(doc)
 	}
 
 	selectKeyword := "SELECT"
@@ -451,6 +496,9 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	}
 
 	var b strings.Builder
+	if prefix := stmt.buildCTEPrefix(); prefix != "" {
+		b.WriteString(prefix)
+	}
 	fmt.Fprintf(&b, "%s %s FROM \"%s\"", selectKeyword, strings.Join(colParts, ", "), stmt.table)
 
 	for _, join := range stmt.joins {
@@ -487,21 +535,21 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 	return b.String()
 }
 
-func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any) error {
-	//defer  stmt.cleanup()
-
+func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, doc any, obs isql.Observer, cache *core.StmtCache) (err error) {
 	if stmt.showSQL {
 		log.Printf("Read Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	var (
-		err  error
-		rows *sql.Rows
-	)
+	var rows *sql.Rows
 
-	if tx != nil {
+	switch {
+	case tx != nil:
 		rows, err = tx.QueryContext(ctx, query, stmt.args...)
-	} else {
+	case cache != nil:
+		rows, err = cache.QueryContext(ctx, conn, query, stmt.args...)
+	default:
 		rows, err = conn.QueryContext(ctx, query, stmt.args...)
 	}
 	if err != nil {
@@ -513,7 +561,7 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	switch elem.Kind() {
 	case reflect.Struct:
 		if rows.Next() {
-			if err = isql.ScanRow(rows, doc); err != nil {
+			if err = core.ScanRow(rows, doc); err != nil {
 				return err
 			}
 
@@ -522,7 +570,7 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	case reflect.Slice:
 		for rows.Next() {
 			rowElem := reflect.New(elem.Type().Elem()).Interface()
-			if err = isql.ScanRow(rows, rowElem); err != nil {
+			if err = core.ScanRow(rows, rowElem); err != nil {
 				return err
 			}
 			elem.Set(reflect.Append(elem, reflect.ValueOf(rowElem).Elem()))
@@ -534,6 +582,50 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	return sql.ErrNoRows
 }
 
+// GenerateCountQuery builds a SELECT COUNT(*) query honoring the current table,
+// JOINs, soft-delete filter, and WHERE clause. Columns, aggregates, ORDER BY and
+// LIMIT/OFFSET are ignored; it is intended for ungrouped row counts. The
+// soft-delete column is taken from the statement, or the Sync-time registry keyed
+// by table name, so soft-deleted rows are excluded unless WithDeleted was set.
+func (stmt *Statement) GenerateCountQuery() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "SELECT COUNT(*) FROM \"%s\"", stmt.table)
+
+	for _, join := range stmt.joins {
+		b.WriteString(" ")
+		b.WriteString(join)
+	}
+
+	softCol := stmt.softDeleteCol
+	if softCol == "" {
+		softCol = core.SoftDeleteColumnForTable(stmt.table)
+	}
+	if softCol != "" && !stmt.withDeleted {
+		stmt.where = stmt.AddWhereClause(softCol + " IS NULL")
+	}
+	if stmt.where != "" {
+		b.WriteString(" WHERE ")
+		b.WriteString(stmt.where)
+	}
+	return b.String()
+}
+
+// ExecuteCountQuery runs a COUNT query and returns the scalar result.
+func (stmt *Statement) ExecuteCountQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (count int64, err error) {
+	if stmt.showSQL {
+		log.Printf("Count Query: query: %v, args: %v\n", query, stmt.args)
+	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
+
+	row, err := stmt.queryRow(ctx, conn, tx, cache, query)
+	if err != nil {
+		return 0, err
+	}
+	err = row.Scan(&count)
+	return count, err
+}
+
 func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	stmt.mustColMap = stmt.generateMustColMap()
 	rvalue := reflect.ValueOf(doc)
@@ -543,27 +635,30 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 	var cols, placeholders []string
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		col := isql.GetFieldName(field)
+		if core.IsRelationField(field) {
+			continue
+		}
+		col := core.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
 		stmt.argCounter++
 		cols = append(cols, col)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", stmt.argCounter))
-		stmt.args = append(stmt.args, isql.SQLArgValue(field, rvalue.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
 	if stmt.table == "" {
-		stmt.table = isql.GetTableName(doc)
+		stmt.table = core.GetTableName(doc)
 	}
 
 	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
 		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 }
 
-func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (any, error) {
+func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (id any, err error) {
 	pkCol := stmt.pkColumn
 	if pkCol == "" {
 		pkCol = "id"
@@ -572,28 +667,150 @@ func (stmt *Statement) ExecuteInsertQuery(ctx context.Context, conn *sql.DB, tx 
 	if stmt.showSQL {
 		log.Printf("Insert Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	var (
-		id  any
-		err error
-	)
-	if tx != nil {
-		err = tx.QueryRowContext(ctx, query, stmt.args...).Scan(&id)
-	} else {
-		err = conn.QueryRowContext(ctx, query, stmt.args...).Scan(&id)
+	row, err := stmt.queryRow(ctx, conn, tx, cache, query)
+	if err != nil {
+		return nil, err
 	}
+	err = row.Scan(&id)
 	return id, err
 }
 
-func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string) (sql.Result, error) {
+// queryRow runs a single-row query over the transaction, the statement cache, or
+// the raw connection, in that order of preference.
+func (stmt *Statement) queryRow(ctx context.Context, conn *sql.DB, tx *sql.Tx, cache *core.StmtCache, query string) (*sql.Row, error) {
+	switch {
+	case tx != nil:
+		return tx.QueryRowContext(ctx, query, stmt.args...), nil
+	case cache != nil:
+		return cache.QueryRowContext(ctx, conn, query, stmt.args...)
+	default:
+		return conn.QueryRowContext(ctx, query, stmt.args...), nil
+	}
+}
+
+// GenerateBulkInsertQuery builds a single multi-row INSERT for docs that share
+// the same struct type. A column is included if it is forced, required, or
+// non-zero in any of the docs; every row then supplies a value for each such
+// column. Docs must all be of the same type.
+func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
+	stmt.mustColMap = stmt.generateMustColMap()
+
+	first := reflect.ValueOf(docs[0])
+	if first.Kind() == reflect.Pointer {
+		first = first.Elem()
+	}
+
+	include := make([]bool, first.NumField())
+	for _, doc := range docs {
+		rv := reflect.ValueOf(doc)
+		if rv.Kind() == reflect.Pointer {
+			rv = rv.Elem()
+		}
+		for idx := 0; idx < rv.NumField(); idx++ {
+			if include[idx] {
+				continue
+			}
+			field := rv.Type().Field(idx)
+			if core.IsRelationField(field) {
+				continue
+			}
+			col := core.GetFieldName(field)
+			if stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rv.Field(idx).IsZero() {
+				include[idx] = true
+			}
+		}
+	}
+
+	var cols []string
+	var fieldIdxs []int
+	for idx := 0; idx < first.NumField(); idx++ {
+		if !include[idx] {
+			continue
+		}
+		cols = append(cols, core.GetFieldName(first.Type().Field(idx)))
+		fieldIdxs = append(fieldIdxs, idx)
+	}
+
+	if stmt.table == "" {
+		stmt.table = core.GetTableName(docs[0])
+	}
+
+	rows := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		rv := reflect.ValueOf(doc)
+		if rv.Kind() == reflect.Pointer {
+			rv = rv.Elem()
+		}
+		placeholders := make([]string, len(fieldIdxs))
+		for i, fi := range fieldIdxs {
+			stmt.argCounter++
+			placeholders[i] = fmt.Sprintf("$%d", stmt.argCounter)
+			stmt.args = append(stmt.args, core.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
+		}
+		rows = append(rows, "("+strings.Join(placeholders, ", ")+")")
+	}
+
+	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES %s",
+		stmt.table, strings.Join(cols, ", "), strings.Join(rows, ", "))
+}
+
+// ExecuteBulkInsertQuery runs a multi-row INSERT and returns the generated
+// primary keys in row order.
+func (stmt *Statement) ExecuteBulkInsertQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (ids []any, err error) {
+	pkCol := stmt.pkColumn
+	if pkCol == "" {
+		pkCol = "id"
+	}
+	query += fmt.Sprintf(" RETURNING %s;", pkCol)
+	if stmt.showSQL {
+		log.Printf("Bulk Insert Query: query: %v, args: %v\n", query, stmt.args)
+	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
+
+	var rows *sql.Rows
+	switch {
+	case tx != nil:
+		rows, err = tx.QueryContext(ctx, query, stmt.args...)
+	case cache != nil:
+		rows, err = cache.QueryContext(ctx, conn, query, stmt.args...)
+	default:
+		rows, err = conn.QueryContext(ctx, query, stmt.args...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id any
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return nil, scanErr
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (stmt *Statement) ExecuteWriteQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (res sql.Result, err error) {
 	if stmt.showSQL {
 		log.Printf("Write Query: query: %v, args: %v\n", query, stmt.args)
 	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
 
-	if tx != nil {
-		return tx.ExecContext(ctx, query, stmt.args...)
+	switch {
+	case tx != nil:
+		res, err = tx.ExecContext(ctx, query, stmt.args...)
+	case cache != nil:
+		res, err = cache.ExecContext(ctx, conn, query, stmt.args...)
+	default:
+		res, err = conn.ExecContext(ctx, query, stmt.args...)
 	}
-	return conn.ExecContext(ctx, query, stmt.args...)
+	return res, err
 }
 
 func (stmt *Statement) generateMustColMap() map[string]bool {
@@ -624,19 +841,22 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	freshCounter := 0
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
-		col := isql.GetFieldName(field)
+		if core.IsRelationField(field) {
+			continue
+		}
+		col := core.GetFieldName(field)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || isql.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
 			continue
 		}
 
 		freshCounter++
 		setCols = append(setCols, fmt.Sprintf("%s = $%d", col, freshCounter))
-		setArgs = append(setArgs, isql.SQLArgValue(field, rvalue.Field(idx)))
+		setArgs = append(setArgs, core.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
 	if stmt.table == "" {
-		stmt.table = isql.GetTableName(doc)
+		stmt.table = core.GetTableName(doc)
 	}
 
 	// Renumber existing WHERE placeholders ($1...$n → $(freshCounter+1)...$(freshCounter+n))

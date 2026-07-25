@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -165,6 +166,38 @@ func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
 	assert.Contains(t, query, "score")
 }
 
+func TestGenerateBulkInsertQuery_singleStatement(t *testing.T) {
+	stmt := new(Statement).Table("test_doc")
+	docs := []any{
+		insertTestDoc{Name: "alice", Email: "alice@test.com"},
+		insertTestDoc{Name: "bob", Email: "bob@test.com"},
+	}
+
+	query := stmt.GenerateBulkInsertQuery(docs)
+
+	assert.Contains(t, query, "INSERT INTO \"test_doc\"")
+	assert.Contains(t, query, "name")
+	assert.Contains(t, query, "email")
+	// one statement, two value groups
+	assert.Equal(t, 1, strings.Count(query, "INSERT INTO"))
+	assert.Contains(t, query, "(?, ?), (?, ?)")
+	assert.Equal(t, []any{"alice", "alice@test.com", "bob", "bob@test.com"}, stmt.args)
+}
+
+func TestGenerateBulkInsertQuery_columnUnionAcrossDocs(t *testing.T) {
+	stmt := new(Statement).Table("test_doc")
+	// score is zero in first doc but set in second → must be included for both rows
+	docs := []any{
+		insertTestDoc{Name: "alice"},
+		insertTestDoc{Name: "bob", Score: 7},
+	}
+
+	query := stmt.GenerateBulkInsertQuery(docs)
+
+	assert.Contains(t, query, "score")
+	assert.Equal(t, []any{"alice", 0, "bob", 7}, stmt.args)
+}
+
 type jsonAddress struct {
 	Street string `json:"street"`
 	City   string `json:"city"`
@@ -203,4 +236,51 @@ func TestGenerateInsertQuery_jsonArgsAsText(t *testing.T) {
 	assert.Contains(t, query, "payload")
 	assert.Contains(t, query, "address")
 	assert.Equal(t, []any{"alice", `{"a":1}`, `{"street":"Road 1","city":"Dhaka"}`}, stmt.args)
+}
+
+func TestWith_sqlitePrependsCTEArgs(t *testing.T) {
+	sub := new(Statement).Table("orders").Columns("user_id")
+	sub.Where("total > ?", 1000)
+	subSQL := sub.GenerateReadQuery(nil)
+	subArgs := sub.Args()
+
+	outer := new(Statement).Table("users")
+	outer.With("big", subSQL, subArgs)
+	outer.Where("active = ?", true)
+	q := outer.GenerateReadQuery(nil)
+
+	assert.Contains(t, q, `WITH big AS (SELECT user_id FROM "orders" WHERE total > ?)`)
+	assert.Contains(t, q, `SELECT * FROM "users" WHERE active = ?`)
+	assert.Equal(t, []any{1000, true}, outer.Args())
+}
+
+func TestGenerateCountQuery_sqliteWhere(t *testing.T) {
+	stmt := new(Statement).Table("account").Where("age > ?", 18)
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "WHERE")
+	assert.Contains(t, q, "age > ?")
+	assert.Equal(t, 18, stmt.args[len(stmt.args)-1])
+}
+
+func TestGenerateCountQuery_sqliteExcludesSoftDeleted(t *testing.T) {
+	stmt := new(Statement).Table("account")
+	stmt.SoftDeleteCol("deleted_at")
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "deleted_at IS NULL")
+}
+
+func TestGenerateCountQuery_sqliteWithDeletedIncludesAll(t *testing.T) {
+	stmt := new(Statement).Table("account")
+	stmt.SoftDeleteCol("deleted_at")
+	stmt.WithDeleted()
+
+	q := stmt.GenerateCountQuery()
+
+	assert.NotContains(t, q, "deleted_at IS NULL")
 }

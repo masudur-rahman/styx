@@ -50,25 +50,6 @@ func (mr *MockEngineMockRecorder) AllCols() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllCols", reflect.TypeOf((*MockEngine)(nil).AllCols))
 }
 
-// Avg mocks base method.
-func (m *MockEngine) Avg(col string, alias ...string) sql0.Engine {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{col}
-	for _, a := range alias {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "Avg", varargs...)
-	ret0, _ := ret[0].(sql0.Engine)
-	return ret0
-}
-
-// Avg indicates an expected call of Avg.
-func (mr *MockEngineMockRecorder) Avg(col interface{}, alias ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{col}, alias...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Avg", reflect.TypeOf((*MockEngine)(nil).Avg), varargs...)
-}
-
 // BeginTx mocks base method.
 func (m *MockEngine) BeginTx(ctx context.Context) (sql0.Engine, error) {
 	m.ctrl.T.Helper()
@@ -131,22 +112,36 @@ func (mr *MockEngineMockRecorder) Commit() *gomock.Call {
 }
 
 // Count mocks base method.
-func (m *MockEngine) Count(col string, alias ...string) sql0.Engine {
+func (m *MockEngine) Count(ctx context.Context) (int64, error) {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{col}
-	for _, a := range alias {
+	ret := m.ctrl.Call(m, "Count", ctx)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Count indicates an expected call of Count.
+func (mr *MockEngineMockRecorder) Count(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Count", reflect.TypeOf((*MockEngine)(nil).Count), ctx)
+}
+
+// Select mocks base method.
+func (m *MockEngine) Select(aggs ...sql0.Aggregate) sql0.Engine {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{}
+	for _, a := range aggs {
 		varargs = append(varargs, a)
 	}
-	ret := m.ctrl.Call(m, "Count", varargs...)
+	ret := m.ctrl.Call(m, "Select", varargs...)
 	ret0, _ := ret[0].(sql0.Engine)
 	return ret0
 }
 
-// Count indicates an expected call of Count.
-func (mr *MockEngineMockRecorder) Count(col interface{}, alias ...interface{}) *gomock.Call {
+// Select indicates an expected call of Select.
+func (mr *MockEngineMockRecorder) Select(aggs ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{col}, alias...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Count", reflect.TypeOf((*MockEngine)(nil).Count), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Select", reflect.TypeOf((*MockEngine)(nil).Select), aggs...)
 }
 
 // DeleteOne mocks base method.
@@ -477,44 +472,6 @@ func (mr *MockEngineMockRecorder) Limit(n interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Limit", reflect.TypeOf((*MockEngine)(nil).Limit), n)
 }
 
-// Max mocks base method.
-func (m *MockEngine) Max(col string, alias ...string) sql0.Engine {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{col}
-	for _, a := range alias {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "Max", varargs...)
-	ret0, _ := ret[0].(sql0.Engine)
-	return ret0
-}
-
-// Max indicates an expected call of Max.
-func (mr *MockEngineMockRecorder) Max(col interface{}, alias ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{col}, alias...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Max", reflect.TypeOf((*MockEngine)(nil).Max), varargs...)
-}
-
-// Min mocks base method.
-func (m *MockEngine) Min(col string, alias ...string) sql0.Engine {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{col}
-	for _, a := range alias {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "Min", varargs...)
-	ret0, _ := ret[0].(sql0.Engine)
-	return ret0
-}
-
-// Min indicates an expected call of Min.
-func (mr *MockEngineMockRecorder) Min(col interface{}, alias ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{col}, alias...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Min", reflect.TypeOf((*MockEngine)(nil).Min), varargs...)
-}
-
 // MustCols mocks base method.
 func (m *MockEngine) MustCols(cols ...string) sql0.Engine {
 	m.ctrl.T.Helper()
@@ -650,6 +607,48 @@ func (mr *MockEngineMockRecorder) Paginate(page, perPage interface{}) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Paginate", reflect.TypeOf((*MockEngine)(nil).Paginate), page, perPage)
 }
 
+// Preload mocks base method.
+func (m *MockEngine) Preload(assoc string) sql0.Engine {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Preload", assoc)
+	ret0, _ := ret[0].(sql0.Engine)
+	return ret0
+}
+
+// Preload indicates an expected call of Preload.
+func (mr *MockEngineMockRecorder) Preload(assoc interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Preload", reflect.TypeOf((*MockEngine)(nil).Preload), assoc)
+}
+
+// Stats mocks base method.
+func (m *MockEngine) Stats() sql.DBStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Stats")
+	ret0, _ := ret[0].(sql.DBStats)
+	return ret0
+}
+
+// Stats indicates an expected call of Stats.
+func (mr *MockEngineMockRecorder) Stats() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stats", reflect.TypeOf((*MockEngine)(nil).Stats))
+}
+
+// With mocks base method.
+func (m *MockEngine) With(name string, sub sql0.Engine) sql0.Engine {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "With", name, sub)
+	ret0, _ := ret[0].(sql0.Engine)
+	return ret0
+}
+
+// With indicates an expected call of With.
+func (mr *MockEngineMockRecorder) With(name, sub interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "With", reflect.TypeOf((*MockEngine)(nil).With), name, sub)
+}
+
 // Query mocks base method.
 func (m *MockEngine) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	m.ctrl.T.Helper()
@@ -729,25 +728,6 @@ func (m *MockEngine) ShowSQL(showSQL bool) sql0.Engine {
 func (mr *MockEngineMockRecorder) ShowSQL(showSQL interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShowSQL", reflect.TypeOf((*MockEngine)(nil).ShowSQL), showSQL)
-}
-
-// Sum mocks base method.
-func (m *MockEngine) Sum(col string, alias ...string) sql0.Engine {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{col}
-	for _, a := range alias {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "Sum", varargs...)
-	ret0, _ := ret[0].(sql0.Engine)
-	return ret0
-}
-
-// Sum indicates an expected call of Sum.
-func (mr *MockEngineMockRecorder) Sum(col interface{}, alias ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{col}, alias...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Sum", reflect.TypeOf((*MockEngine)(nil).Sum), varargs...)
 }
 
 // Sync mocks base method.

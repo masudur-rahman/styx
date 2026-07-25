@@ -1,8 +1,13 @@
+// Package supabase provides an EXPERIMENTAL, incomplete Supabase implementation
+// of the sql.Engine interface. Most methods are unimplemented and will panic if
+// called. It is not supported for production use; prefer the SQLite or
+// PostgreSQL engines. See NewSupabase.
 package supabase
 
 import (
 	"context"
 	"database/sql"
+	"log"
 
 	"github.com/masudur-rahman/styx/dberr"
 	isql "github.com/masudur-rahman/styx/sql"
@@ -16,7 +21,13 @@ type Supabase struct {
 	client *supabase.Client
 }
 
+// NewSupabase creates an experimental Supabase engine.
+//
+// Deprecated: The Supabase engine is experimental and only partially
+// implemented; most operations panic. Use sqlite.NewSQLite or
+// postgres.NewPostgres instead.
 func NewSupabase(client *supabase.Client) Supabase {
+	log.Println("styx: the Supabase engine is experimental and incomplete; not recommended for production use")
 	return Supabase{
 		client: client,
 	}
@@ -122,27 +133,27 @@ func (s Supabase) NotExists(subquery string, args ...any) isql.Engine {
 	panic("implement me")
 }
 
-func (s Supabase) Count(col string, alias ...string) isql.Engine {
+func (s Supabase) Select(aggs ...isql.Aggregate) isql.Engine {
 	panic("implement me")
 }
 
-func (s Supabase) Sum(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (s Supabase) Avg(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (s Supabase) Min(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (s Supabase) Max(col string, alias ...string) isql.Engine {
+func (s Supabase) Count(ctx context.Context) (int64, error) {
 	panic("implement me")
 }
 
 func (s Supabase) Paginate(page, perPage int64) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Preload(assoc string) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) With(name string, sub isql.Engine) isql.Engine {
+	panic("implement me")
+}
+
+func (s Supabase) Stats() sql.DBStats {
 	panic("implement me")
 }
 

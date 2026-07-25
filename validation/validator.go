@@ -6,7 +6,15 @@ import (
 	"github.com/masudur-rahman/styx/dberr"
 )
 
-// Validate checks a struct's fields against validate struct tags.
+// Validatable is implemented by types that carry custom or cross-field
+// validation logic beyond struct tag rules. Its Validate method runs after tag
+// rules pass.
+type Validatable interface {
+	Validate() error
+}
+
+// Validate checks a struct's fields against validate struct tags, then invokes
+// the type's custom Validatable.Validate if implemented.
 // Returns nil if valid, or a *dberr.ValidationError with per-field errors.
 func Validate(doc any) error {
 	val := reflect.ValueOf(doc)
@@ -39,6 +47,10 @@ func Validate(doc any) error {
 
 	if len(fieldErrors) > 0 {
 		return dberr.NewValidationError(fieldErrors)
+	}
+
+	if v, ok := doc.(Validatable); ok {
+		return v.Validate()
 	}
 	return nil
 }

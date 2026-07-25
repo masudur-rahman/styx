@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 
 	"github.com/iancoleman/strcase"
 )
@@ -20,7 +20,7 @@ type fieldInfo struct {
 }
 
 func GenerateTableName(table interface{}) string {
-	return isql.GetTableName(table)
+	return core.GetTableName(table)
 }
 
 func getTableInfo(table interface{}) ([]fieldInfo, error) {
@@ -42,6 +42,9 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 		fieldValue := tableValue.Field(i)
 		if !fieldType.IsExported() {
 			fmt.Println("non-exported fields: ", fieldType.Name)
+			continue
+		}
+		if core.IsRelationField(fieldType) {
 			continue
 		}
 
@@ -83,7 +86,7 @@ func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) field
 		columnConstraint = " " + columnConstraint
 	}
 	sqlType := getSQLType(fieldValue.Type(), autoincr)
-	if isql.IsJSONField(fieldType) {
+	if core.IsJSONField(fieldType) {
 		// SQLite stores JSON as TEXT
 		sqlType = "TEXT"
 	}
@@ -105,7 +108,7 @@ func removeDuplicateKeyword(keyword string) string {
 }
 
 func getFieldName(fieldType reflect.StructField) string {
-	return isql.GetFieldName(fieldType)
+	return core.GetFieldName(fieldType)
 }
 
 func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool, isComposite bool) {
@@ -137,7 +140,7 @@ func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool
 
 // hasReqTag checks if a struct field has the "req" option in its db tag.
 func hasReqTag(field reflect.StructField) bool {
-	return isql.HasReqTag(field)
+	return core.HasReqTag(field)
 }
 
 // ExtractPKColumn returns the primary key column name from a struct's pk tag.
@@ -177,7 +180,7 @@ func ExtractPKColumn(table any) string {
 	return "id"
 }
 
-// ExtractSoftDeleteColumn returns the column name tagged with soft_delete.
+// ExtractSoftDeleteColumn returns the column name tagged with archive.
 // Returns empty string if no soft delete tag is found.
 func ExtractSoftDeleteColumn(table any) string {
 	tableType := reflect.TypeOf(table)
@@ -202,7 +205,7 @@ func ExtractSoftDeleteColumn(table any) string {
 			continue
 		}
 		for _, part := range strings.Fields(parts[1]) {
-			if strings.ToLower(part) == "soft_delete" {
+			if strings.ToLower(part) == "archive" {
 				colName := parts[0]
 				if colName == "" {
 					colName = strcase.ToSnake(field.Name)
@@ -444,7 +447,7 @@ type indexInfo struct {
 	Unique bool
 }
 
-// extractIndexes parses idx and unique_idx tags from a struct type.
+// extractIndexes parses idx and uidx tags from a struct type.
 // Supports: db:"col,idx" (auto-named), db:"col,idx:my_index" (named/composite).
 func extractIndexes(table any) []indexInfo {
 	tableType := reflect.TypeOf(table)
@@ -477,7 +480,7 @@ func extractIndexes(table any) []indexInfo {
 			lp := strings.ToLower(part)
 			if lp == "idx" {
 				unnamed = append(unnamed, indexInfo{Cols: []string{colName}})
-			} else if lp == "unique_idx" {
+			} else if lp == "uidx" {
 				unnamed = append(unnamed, indexInfo{Cols: []string{colName}, Unique: true})
 			} else if strings.HasPrefix(lp, "idx:") {
 				idxName := strings.TrimPrefix(lp, "idx:")
@@ -486,8 +489,8 @@ func extractIndexes(table any) []indexInfo {
 				} else {
 					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}}
 				}
-			} else if strings.HasPrefix(lp, "unique_idx:") {
-				idxName := strings.TrimPrefix(lp, "unique_idx:")
+			} else if strings.HasPrefix(lp, "uidx:") {
+				idxName := strings.TrimPrefix(lp, "uidx:")
 				if existing, ok := named[idxName]; ok {
 					existing.Cols = append(existing.Cols, colName)
 				} else {

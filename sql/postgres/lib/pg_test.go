@@ -63,6 +63,33 @@ func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
 	assert.Contains(t, query, "score")
 }
 
+func TestGenerateBulkInsertQuery_singleStatementNumberedPlaceholders(t *testing.T) {
+	stmt := new(Statement).Table("test_doc")
+	docs := []any{
+		insertTestDoc{Name: "alice", Email: "alice@test.com"},
+		insertTestDoc{Name: "bob", Email: "bob@test.com"},
+	}
+
+	query := stmt.GenerateBulkInsertQuery(docs)
+
+	assert.Contains(t, query, "INSERT INTO \"test_doc\"")
+	assert.Contains(t, query, "($1, $2), ($3, $4)")
+	assert.Equal(t, []any{"alice", "alice@test.com", "bob", "bob@test.com"}, stmt.args)
+}
+
+func TestGenerateBulkInsertQuery_columnUnionAcrossDocs(t *testing.T) {
+	stmt := new(Statement).Table("test_doc")
+	docs := []any{
+		insertTestDoc{Name: "alice"},
+		insertTestDoc{Name: "bob", Score: 7},
+	}
+
+	query := stmt.GenerateBulkInsertQuery(docs)
+
+	assert.Contains(t, query, "score")
+	assert.Equal(t, []any{"alice", 0, "bob", 7}, stmt.args)
+}
+
 type jsonAddress struct {
 	Street string `json:"street"`
 	City   string `json:"city"`
@@ -111,4 +138,53 @@ func TestGenerateUpdateQuery_jsonArgsAsText(t *testing.T) {
 
 	assert.Contains(t, query, "payload = $1")
 	assert.Equal(t, []any{`{"b":2}`, 7}, stmt.args)
+}
+
+func TestWith_postgresRenumbersAndOrdersArgs(t *testing.T) {
+	sub := new(Statement).Table("orders").Columns("user_id")
+	sub.Where("total > ?", 1000)
+	subSQL := sub.GenerateReadQuery(nil)
+	subArgs := sub.Args()
+
+	outer := new(Statement).Table("users")
+	outer.With("big", subSQL, subArgs)
+	outer.Where("active = ?", true)
+	q := outer.GenerateReadQuery(nil)
+
+	assert.Contains(t, q, `WITH big AS (SELECT user_id FROM "orders" WHERE total > $1)`)
+	assert.Contains(t, q, `SELECT * FROM "users" WHERE active = $2`)
+	assert.Equal(t, []any{1000, true}, outer.Args())
+}
+
+func TestWith_postgresRenumbersWhenCalledAfterWhere(t *testing.T) {
+	sub := new(Statement).Table("orders").Columns("user_id")
+	sub.Where("total > ?", 1000)
+
+	outer := new(Statement).Table("users")
+	outer.Where("active = ?", true)
+	outer.With("big", sub.GenerateReadQuery(nil), sub.Args())
+	q := outer.GenerateReadQuery(nil)
+
+	assert.Contains(t, q, `WITH big AS (SELECT user_id FROM "orders" WHERE total > $2)`)
+	assert.Contains(t, q, `WHERE active = $1`)
+	assert.Equal(t, []any{true, 1000}, outer.Args())
+}
+
+func TestGenerateCountQuery_postgresWhere(t *testing.T) {
+	stmt := new(Statement).Table("account").Where("age > ?", 18)
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "WHERE")
+}
+
+func TestGenerateCountQuery_postgresExcludesSoftDeleted(t *testing.T) {
+	stmt := new(Statement).Table("account")
+	stmt.SoftDeleteCol("deleted_at")
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "deleted_at IS NULL")
 }

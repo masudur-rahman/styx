@@ -10,6 +10,7 @@ import (
 	"github.com/masudur-rahman/styx/dberr"
 	"github.com/masudur-rahman/styx/pkg"
 	isql "github.com/masudur-rahman/styx/sql"
+	core "github.com/masudur-rahman/styx/sql/internal/core"
 	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
@@ -30,11 +31,16 @@ func (cp PostgresConfig) String() string {
 	return fmt.Sprintf("user=%v password=%v dbname=%v host=%v port=%v sslmode=%v", cp.User, cp.Password, cp.Name, cp.Host, cp.Port, cp.SSLMode)
 }
 
-// GetPostgresConnection opens a PostgreSQL database and returns a *sql.DB connection pool.
-func GetPostgresConnection(cfg PostgresConfig) (*sql.DB, error) {
+// GetPostgresConnection opens a PostgreSQL database and returns a *sql.DB
+// connection pool. An optional PoolConfig tunes the pool's size and connection
+// lifetimes.
+func GetPostgresConnection(cfg PostgresConfig, pool ...isql.PoolConfig) (*sql.DB, error) {
 	db, err := sql.Open("postgres", cfg.String())
 	if err != nil {
 		return nil, err
+	}
+	if len(pool) > 0 {
+		pool[0].Apply(db)
 	}
 
 	if err = db.PingContext(context.Background()); err != nil {
@@ -86,7 +92,7 @@ func MapsToRecords(records []map[string]any) (*pb.RecordsResponse, error) {
 func GenerateReadQuery(tableName string, record map[string]any) string {
 	var conditions []string
 	for key, val := range record {
-		if isql.IsZeroValue(val) {
+		if core.IsZeroValue(val) {
 			continue
 		}
 
@@ -176,7 +182,7 @@ func GenerateInsertQuery(tableName string, record map[string]any) string {
 func GenerateUpdateQuery(table string, id string, record map[string]any) string {
 	var setValues []string
 	for key, val := range record {
-		if isql.IsZeroValue(val) {
+		if core.IsZeroValue(val) {
 			continue
 		}
 		col, value := toColumnValue(key, val)

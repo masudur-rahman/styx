@@ -57,18 +57,21 @@ type Engine interface {
 	Exists(subquery string, args ...any) Engine
 	// NotExists adds a NOT EXISTS subquery condition.
 	NotExists(subquery string, args ...any) Engine
-	// Count adds a COUNT aggregate expression.
-	Count(col string, alias ...string) Engine
-	// Sum adds a SUM aggregate expression.
-	Sum(col string, alias ...string) Engine
-	// Avg adds an AVG aggregate expression.
-	Avg(col string, alias ...string) Engine
-	// Min adds a MIN aggregate expression.
-	Min(col string, alias ...string) Engine
-	// Max adds a MAX aggregate expression.
-	Max(col string, alias ...string) Engine
+	// Select adds aggregate expressions (Count, Sum, Avg, Min, Max) as columns to
+	// the SELECT clause; combine with GroupBy for grouped reporting reads.
+	Select(aggs ...Aggregate) Engine
 	// Paginate sets LIMIT and OFFSET based on 1-indexed page and per-page count.
 	Paginate(page, perPage int64) Engine
+
+	// Preload eager-loads the named association (a struct field declared with a
+	// o2m/m2o/m2m db tag) after the read, using batched
+	// queries to avoid N+1.
+	Preload(assoc string) Engine
+
+	// With registers a named Common Table Expression (WITH name AS (sub)). The
+	// sub Engine is compiled to a subquery without executing; the CTE name can
+	// then be referenced as a table via Table/Join in the outer query.
+	With(name string, sub Engine) Engine
 
 	// Join adds a JOIN clause.
 	Join(table, condition string) Engine
@@ -92,6 +95,10 @@ type Engine interface {
 	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
 	// FindMany retrieves all matching rows into documents (must be a pointer to a slice).
 	FindMany(ctx context.Context, documents any, filter ...any) error
+	// Count returns the number of rows in the table set via Table, matching any
+	// chained conditions (Where/ID/In). Soft-deleted rows are excluded unless
+	// WithDeleted was set, provided the table was registered via Sync.
+	Count(ctx context.Context) (int64, error)
 
 	// InsertOne inserts document and returns the generated primary key.
 	InsertOne(ctx context.Context, document any) (id any, err error)
@@ -116,4 +123,7 @@ type Engine interface {
 
 	// Close releases the underlying database connection.
 	Close() error
+
+	// Stats returns live statistics for the underlying connection pool.
+	Stats() sql.DBStats
 }
