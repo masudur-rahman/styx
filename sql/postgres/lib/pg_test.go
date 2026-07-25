@@ -169,3 +169,22 @@ func TestWith_postgresRenumbersWhenCalledAfterWhere(t *testing.T) {
 	assert.Contains(t, q, `WHERE active = $1`)
 	assert.Equal(t, []any{true, 1000}, outer.Args())
 }
+
+func TestGenerateCountQuery_postgresWhere(t *testing.T) {
+	stmt := new(Statement).Table("account").Where("age > ?", 18)
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "WHERE")
+}
+
+func TestGenerateCountQuery_postgresExcludesSoftDeleted(t *testing.T) {
+	stmt := new(Statement).Table("account")
+	stmt.SoftDeleteCol("deleted_at")
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "deleted_at IS NULL")
+}

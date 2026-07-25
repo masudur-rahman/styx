@@ -7,6 +7,7 @@ import (
 
 	isql "github.com/masudur-rahman/styx/sql"
 	"github.com/masudur-rahman/styx/sql/sqlite"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

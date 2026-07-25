@@ -165,28 +165,12 @@ func (pg Postgres) NotExists(subquery string, args ...any) isql.Engine {
 	return pg
 }
 
-func (pg Postgres) Count(col string, alias ...string) isql.Engine {
-	pg.statement.Count(col, alias...)
-	return pg
-}
-
-func (pg Postgres) Sum(col string, alias ...string) isql.Engine {
-	pg.statement.Sum(col, alias...)
-	return pg
-}
-
-func (pg Postgres) Avg(col string, alias ...string) isql.Engine {
-	pg.statement.Avg(col, alias...)
-	return pg
-}
-
-func (pg Postgres) Min(col string, alias ...string) isql.Engine {
-	pg.statement.Min(col, alias...)
-	return pg
-}
-
-func (pg Postgres) Max(col string, alias ...string) isql.Engine {
-	pg.statement.Max(col, alias...)
+func (pg Postgres) Select(aggs ...isql.Aggregate) isql.Engine {
+	exprs := make([]string, len(aggs))
+	for i, a := range aggs {
+		exprs[i] = a.Expr()
+	}
+	pg.statement.Select(exprs...)
 	return pg
 }
 
@@ -336,6 +320,15 @@ func (pg Postgres) FindMany(ctx context.Context, documents any, filter ...any) e
 		return err
 	}
 	return pg.preload(ctx, documents)
+}
+
+// Count returns the number of rows in the table set via Table, matching any
+// chained conditions. Soft-deleted rows are excluded unless WithDeleted was set.
+func (pg Postgres) Count(ctx context.Context) (int64, error) {
+	pg.statement.GenerateWhereClause()
+
+	query := pg.statement.GenerateCountQuery()
+	return pg.statement.ExecuteCountQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
 }
 
 func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err error) {
@@ -552,6 +545,7 @@ func (pg Postgres) Sync(ctx context.Context, tables ...any) error {
 		if err := lib.SyncTable(ctx, pg.conn, table); err != nil {
 			return err
 		}
+		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
 	}
 
 	return nil

@@ -57,16 +57,9 @@ type Engine interface {
 	Exists(subquery string, args ...any) Engine
 	// NotExists adds a NOT EXISTS subquery condition.
 	NotExists(subquery string, args ...any) Engine
-	// Count adds a COUNT aggregate expression.
-	Count(col string, alias ...string) Engine
-	// Sum adds a SUM aggregate expression.
-	Sum(col string, alias ...string) Engine
-	// Avg adds an AVG aggregate expression.
-	Avg(col string, alias ...string) Engine
-	// Min adds a MIN aggregate expression.
-	Min(col string, alias ...string) Engine
-	// Max adds a MAX aggregate expression.
-	Max(col string, alias ...string) Engine
+	// Select adds aggregate expressions (Count, Sum, Avg, Min, Max) as columns to
+	// the SELECT clause; combine with GroupBy for grouped reporting reads.
+	Select(aggs ...Aggregate) Engine
 	// Paginate sets LIMIT and OFFSET based on 1-indexed page and per-page count.
 	Paginate(page, perPage int64) Engine
 
@@ -102,6 +95,10 @@ type Engine interface {
 	FindOne(ctx context.Context, document any, filter ...any) (bool, error)
 	// FindMany retrieves all matching rows into documents (must be a pointer to a slice).
 	FindMany(ctx context.Context, documents any, filter ...any) error
+	// Count returns the number of rows in the table set via Table, matching any
+	// chained conditions (Where/ID/In). Soft-deleted rows are excluded unless
+	// WithDeleted was set, provided the table was registered via Sync.
+	Count(ctx context.Context) (int64, error)
 
 	// InsertOne inserts document and returns the generated primary key.
 	InsertOne(ctx context.Context, document any) (id any, err error)

@@ -357,42 +357,11 @@ func (stmt *Statement) NotExists(subquery string, args ...any) *Statement {
 	return stmt
 }
 
-// Count adds a COUNT aggregate to the SELECT clause.
-func (stmt *Statement) Count(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("COUNT", col, alias...))
+// Select appends aggregate expressions (already rendered as SQL) to the SELECT
+// clause.
+func (stmt *Statement) Select(exprs ...string) *Statement {
+	stmt.aggregates = append(stmt.aggregates, exprs...)
 	return stmt
-}
-
-// Sum adds a SUM aggregate to the SELECT clause.
-func (stmt *Statement) Sum(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("SUM", col, alias...))
-	return stmt
-}
-
-// Avg adds an AVG aggregate to the SELECT clause.
-func (stmt *Statement) Avg(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("AVG", col, alias...))
-	return stmt
-}
-
-// Min adds a MIN aggregate to the SELECT clause.
-func (stmt *Statement) Min(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("MIN", col, alias...))
-	return stmt
-}
-
-// Max adds a MAX aggregate to the SELECT clause.
-func (stmt *Statement) Max(col string, alias ...string) *Statement {
-	stmt.aggregates = append(stmt.aggregates, formatAggregate("MAX", col, alias...))
-	return stmt
-}
-
-func formatAggregate(fn, col string, alias ...string) string {
-	expr := fmt.Sprintf("%s(%s)", fn, col)
-	if len(alias) > 0 && alias[0] != "" {
-		expr += " as " + alias[0]
-	}
-	return expr
 }
 
 // Paginate sets LIMIT and OFFSET for page-based pagination.
@@ -611,6 +580,50 @@ func (stmt *Statement) ExecuteReadQuery(ctx context.Context, conn *sql.DB, tx *s
 	}
 
 	return sql.ErrNoRows
+}
+
+// GenerateCountQuery builds a SELECT COUNT(*) query honoring the current table,
+// JOINs, soft-delete filter, and WHERE clause. Columns, aggregates, ORDER BY and
+// LIMIT/OFFSET are ignored; it is intended for ungrouped row counts. The
+// soft-delete column is taken from the statement, or the Sync-time registry keyed
+// by table name, so soft-deleted rows are excluded unless WithDeleted was set.
+func (stmt *Statement) GenerateCountQuery() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "SELECT COUNT(*) FROM \"%s\"", stmt.table)
+
+	for _, join := range stmt.joins {
+		b.WriteString(" ")
+		b.WriteString(join)
+	}
+
+	softCol := stmt.softDeleteCol
+	if softCol == "" {
+		softCol = core.SoftDeleteColumnForTable(stmt.table)
+	}
+	if softCol != "" && !stmt.withDeleted {
+		stmt.where = stmt.AddWhereClause(softCol + " IS NULL")
+	}
+	if stmt.where != "" {
+		b.WriteString(" WHERE ")
+		b.WriteString(stmt.where)
+	}
+	return b.String()
+}
+
+// ExecuteCountQuery runs a COUNT query and returns the scalar result.
+func (stmt *Statement) ExecuteCountQuery(ctx context.Context, conn *sql.DB, tx *sql.Tx, query string, obs isql.Observer, cache *core.StmtCache) (count int64, err error) {
+	if stmt.showSQL {
+		log.Printf("Count Query: query: %v, args: %v\n", query, stmt.args)
+	}
+	start := time.Now()
+	defer func() { observeQuery(ctx, obs, query, stmt.args, start, err) }()
+
+	row, err := stmt.queryRow(ctx, conn, tx, cache, query)
+	if err != nil {
+		return 0, err
+	}
+	err = row.Scan(&count)
+	return count, err
 }
 
 func (stmt *Statement) GenerateInsertQuery(doc any) string {

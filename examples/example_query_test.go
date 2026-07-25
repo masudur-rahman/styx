@@ -1,6 +1,10 @@
 package examples_test
 
-import "fmt"
+import (
+	"fmt"
+
+	isql "github.com/masudur-rahman/styx/sql"
+)
 
 // Example_orderingAndPagination shows OrderBy together with Paginate.
 func Example_orderingAndPagination() {
@@ -89,7 +93,7 @@ func Example_aggregatesAndGrouping() {
 	var totals []productTotal
 	db.Table("sale").
 		Columns("product").
-		Sum("amount", "total").
+		Select(isql.Sum("amount").As("total")).
 		GroupBy("product").
 		OrderBy("product", "ASC").
 		FindMany(ctx, &totals)

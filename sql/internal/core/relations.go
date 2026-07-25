@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/iancoleman/strcase"
-
 	"github.com/masudur-rahman/styx/sql"
+
+	"github.com/iancoleman/strcase"
 )
 
 // RelationKind identifies the kind of association between two entities.

@@ -13,6 +13,7 @@ import (
 )
 
 var rawMessageType = reflect.TypeOf(json.RawMessage{})
+
 var timeType = reflect.TypeOf(time.Time{})
 
 var (

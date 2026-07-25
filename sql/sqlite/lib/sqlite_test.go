@@ -253,3 +253,34 @@ func TestWith_sqlitePrependsCTEArgs(t *testing.T) {
 	assert.Contains(t, q, `SELECT * FROM "users" WHERE active = ?`)
 	assert.Equal(t, []any{1000, true}, outer.Args())
 }
+
+func TestGenerateCountQuery_sqliteWhere(t *testing.T) {
+	stmt := new(Statement).Table("account").Where("age > ?", 18)
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "WHERE")
+	assert.Contains(t, q, "age > ?")
+	assert.Equal(t, 18, stmt.args[len(stmt.args)-1])
+}
+
+func TestGenerateCountQuery_sqliteExcludesSoftDeleted(t *testing.T) {
+	stmt := new(Statement).Table("account")
+	stmt.SoftDeleteCol("deleted_at")
+
+	q := stmt.GenerateCountQuery()
+
+	assert.Contains(t, q, `SELECT COUNT(*) FROM "account"`)
+	assert.Contains(t, q, "deleted_at IS NULL")
+}
+
+func TestGenerateCountQuery_sqliteWithDeletedIncludesAll(t *testing.T) {
+	stmt := new(Statement).Table("account")
+	stmt.SoftDeleteCol("deleted_at")
+	stmt.WithDeleted()
+
+	q := stmt.GenerateCountQuery()
+
+	assert.NotContains(t, q, "deleted_at IS NULL")
+}

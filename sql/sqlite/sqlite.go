@@ -167,28 +167,12 @@ func (sq SQLite) NotExists(subquery string, args ...any) isql.Engine {
 	return sq
 }
 
-func (sq SQLite) Count(col string, alias ...string) isql.Engine {
-	sq.statement.Count(col, alias...)
-	return sq
-}
-
-func (sq SQLite) Sum(col string, alias ...string) isql.Engine {
-	sq.statement.Sum(col, alias...)
-	return sq
-}
-
-func (sq SQLite) Avg(col string, alias ...string) isql.Engine {
-	sq.statement.Avg(col, alias...)
-	return sq
-}
-
-func (sq SQLite) Min(col string, alias ...string) isql.Engine {
-	sq.statement.Min(col, alias...)
-	return sq
-}
-
-func (sq SQLite) Max(col string, alias ...string) isql.Engine {
-	sq.statement.Max(col, alias...)
+func (sq SQLite) Select(aggs ...isql.Aggregate) isql.Engine {
+	exprs := make([]string, len(aggs))
+	for i, a := range aggs {
+		exprs[i] = a.Expr()
+	}
+	sq.statement.Select(exprs...)
 	return sq
 }
 
@@ -338,6 +322,15 @@ func (sq SQLite) FindMany(ctx context.Context, documents any, filter ...any) err
 		return err
 	}
 	return sq.preload(ctx, documents)
+}
+
+// Count returns the number of rows in the table set via Table, matching any
+// chained conditions. Soft-deleted rows are excluded unless WithDeleted was set.
+func (sq SQLite) Count(ctx context.Context) (int64, error) {
+	sq.statement.GenerateWhereClause()
+
+	query := sq.statement.GenerateCountQuery()
+	return sq.statement.ExecuteCountQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
 }
 
 func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error) {
@@ -554,6 +547,7 @@ func (sq SQLite) Sync(ctx context.Context, tables ...any) error {
 		if err := lib.SyncTable(ctx, sq.conn, table); err != nil {
 			return err
 		}
+		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
 	}
 
 	return nil

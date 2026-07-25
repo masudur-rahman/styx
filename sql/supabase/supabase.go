@@ -133,23 +133,11 @@ func (s Supabase) NotExists(subquery string, args ...any) isql.Engine {
 	panic("implement me")
 }
 
-func (s Supabase) Count(col string, alias ...string) isql.Engine {
+func (s Supabase) Select(aggs ...isql.Aggregate) isql.Engine {
 	panic("implement me")
 }
 
-func (s Supabase) Sum(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (s Supabase) Avg(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (s Supabase) Min(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (s Supabase) Max(col string, alias ...string) isql.Engine {
+func (s Supabase) Count(ctx context.Context) (int64, error) {
 	panic("implement me")
 }
 

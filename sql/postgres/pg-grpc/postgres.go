@@ -119,23 +119,11 @@ func (d Database) NotExists(subquery string, args ...any) isql.Engine {
 	panic("implement me")
 }
 
-func (d Database) Count(col string, alias ...string) isql.Engine {
+func (d Database) Select(aggs ...isql.Aggregate) isql.Engine {
 	panic("implement me")
 }
 
-func (d Database) Sum(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (d Database) Avg(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (d Database) Min(col string, alias ...string) isql.Engine {
-	panic("implement me")
-}
-
-func (d Database) Max(col string, alias ...string) isql.Engine {
+func (d Database) Count(ctx context.Context) (int64, error) {
 	panic("implement me")
 }
 

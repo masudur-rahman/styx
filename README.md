@@ -34,6 +34,7 @@ go test ./examples/
 |---------|---------|
 | CRUD + filters (ID / Where / struct filter / Columns) | [`example_crud_test.go`](examples/example_crud_test.go) |
 | Ordering, pagination, LIKE / IN, aggregates + GROUP BY | [`example_query_test.go`](examples/example_query_test.go) |
+| Row count (`Count`, soft-delete aware) | [`example_count_test.go`](examples/example_count_test.go) |
 | Bulk insert (single multi-row `INSERT`) | [`example_bulk_test.go`](examples/example_bulk_test.go) |
 | Lifecycle hooks (`BeforeCreate`, `AfterFind`, …) | [`example_hooks_test.go`](examples/example_hooks_test.go) |
 | Validation (tag rules + custom `Validate()`) | [`example_validation_test.go`](examples/example_validation_test.go) |
@@ -249,17 +250,36 @@ All database engines implement the `sql.Engine` interface. Methods are chainable
 | `GroupBy(cols...)`                  | Add `GROUP BY` clause                      |
 | `Having(cond, args...)`             | Add `HAVING` clause for groups             |
 | `Distinct()`                        | Enable `SELECT DISTINCT`                   |
+| `Select(aggs ...Aggregate)`         | Add aggregate columns (`Count/Sum/Avg/Min/Max`) |
+| `Count(ctx)`                        | Return matching row count as `int64`       |
 | `With(name, sub)`                   | Add a `WITH` CTE from a sub-Engine         |
 | `Preload(assoc)`                    | Eager-load an association (no N+1)          |
 
 ### Features
 
 #### Aggregates
-Perform calculations directly through the query builder:
+Build aggregate columns with the `sql.Count/Sum/Avg/Min/Max` expression helpers
+and `Select`, then scan them into a struct. Use `.As(alias)` to name a column:
 ```go
-db.Table("user").Count("id", "total_users").FindMany(ctx, &results)
-db.Table("user").Avg("age", "average_age").FindMany(ctx, &results)
+import isql "github.com/masudur-rahman/styx/sql"
+
+db.Table("sale").
+    Columns("product").
+    Select(isql.Sum("amount").As("total")).
+    GroupBy("product").
+    FindMany(ctx, &totals)
+// SELECT product, SUM(amount) as total FROM "sale" GROUP BY product
 // Supported: Count, Sum, Avg, Min, Max
+```
+
+#### Count
+Get a row count directly as an `int64`. Soft-deleted rows are excluded by default
+(the table's soft-delete column is registered at `Sync` time); `WithDeleted`
+includes them:
+```go
+n, err := db.Table("user").Count(ctx)
+adults, err := db.Table("user").Where("age >= ?", 18).Count(ctx)
+all, err := db.Table("user").WithDeleted().Count(ctx)
 ```
 
 #### Joins

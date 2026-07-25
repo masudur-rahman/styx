@@ -104,12 +104,12 @@ func TestIntegration_AllFeatures(t *testing.T) {
 		AvgAge float64 `db:"avg_age"`
 	}
 	var stats Stats
-	err = db.Table("user").Avg("age", "avg_age").FindMany(ctx, &stats)
+	err = db.Table("user").Select(sql.Avg("age").As("avg_age")).FindMany(ctx, &stats)
 	assert.NoError(t, err)
 	// FindMany into a non-slice might be tricky, usually it expects a slice.
 	// Let's use a slice.
 	var statsList []Stats
-	err = db.Table("user").Avg("age", "avg_age").FindMany(ctx, &statsList)
+	err = db.Table("user").Select(sql.Avg("age").As("avg_age")).FindMany(ctx, &statsList)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, statsList)
 	assert.Equal(t, 15.0, statsList[0].AvgAge)
@@ -164,4 +164,38 @@ func TestIntegration_JSONFields(t *testing.T) {
 	assert.NoError(t, err)
 	assert.JSONEq(t, `{"note":"second"}`, string(updated.Payload))
 	assert.Equal(t, &Location{Lat: 1, Lon: 2}, updated.Extra)
+}
+
+func TestCount_filtersAndSoftDelete(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+
+	for _, u := range []*User{
+		{Name: "a", Email: "a@e.c", Age: 20},
+		{Name: "b", Email: "b@e.c", Age: 30},
+		{Name: "c", Email: "c@e.c", Age: 40},
+	} {
+		_, err := db.Table("user").InsertOne(ctx, u)
+		assert.NoError(t, err)
+	}
+
+	total, err := db.Table("user").Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), total)
+
+	filtered, err := db.Table("user").Where("age >= ?", 30).Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), filtered)
+
+	// Soft-delete one row: the default count excludes it, WithDeleted includes it.
+	err = db.Table("user").DeleteOne(ctx, User{Name: "a"})
+	assert.NoError(t, err)
+
+	live, err := db.Table("user").Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), live)
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), all)
 }
