@@ -31,9 +31,9 @@ NoSQL engines (ArangoDB, MongoDB) do not participate in transactions today — `
 
 ```go
 import (
-    "github.com/masudur-rahman/styx"
-    "github.com/masudur-rahman/styx/sql/sqlite"
-    sqlitelib "github.com/masudur-rahman/styx/sql/sqlite/lib"
+    "github.com/masudur-rahman/styx/v2"
+    "github.com/masudur-rahman/styx/v2/sql/sqlite"
+    sqlitelib "github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 )
 
 func main() {

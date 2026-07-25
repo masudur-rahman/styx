@@ -3,8 +3,8 @@ package _map
 import (
 	"reflect"
 
-	"github.com/masudur-rahman/styx/dberr"
-	"github.com/masudur-rahman/styx/mock"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	"github.com/masudur-rahman/styx/v2/mock"
 
 	"github.com/rs/xid"
 )

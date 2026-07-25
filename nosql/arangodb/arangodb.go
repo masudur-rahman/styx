@@ -3,9 +3,9 @@ package arangodb
 import (
 	"context"
 
-	"github.com/masudur-rahman/styx/dberr"
-	"github.com/masudur-rahman/styx/nosql"
-	"github.com/masudur-rahman/styx/pkg"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	"github.com/masudur-rahman/styx/v2/nosql"
+	"github.com/masudur-rahman/styx/v2/pkg"
 
 	arango "github.com/arangodb/go-driver"
 )

@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/masudur-rahman/styx/dberr"
-	"github.com/masudur-rahman/styx/pkg"
-	isql "github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	"github.com/masudur-rahman/styx/v2/pkg"
+	isql "github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/postgres/pg-grpc/pb"
 
 	"google.golang.org/protobuf/types/known/anypb"
 )

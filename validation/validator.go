@@ -3,7 +3,7 @@ package validation
 import (
 	"reflect"
 
-	"github.com/masudur-rahman/styx/dberr"
+	"github.com/masudur-rahman/styx/v2/dberr"
 )
 
 // Validatable is implemented by types that carry custom or cross-field

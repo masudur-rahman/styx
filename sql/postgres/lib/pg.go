@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/masudur-rahman/styx/dberr"
-	"github.com/masudur-rahman/styx/pkg"
-	isql "github.com/masudur-rahman/styx/sql"
-	core "github.com/masudur-rahman/styx/sql/internal/core"
-	"github.com/masudur-rahman/styx/sql/postgres/pg-grpc/pb"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	"github.com/masudur-rahman/styx/v2/pkg"
+	isql "github.com/masudur-rahman/styx/v2/sql"
+	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
+	"github.com/masudur-rahman/styx/v2/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
 

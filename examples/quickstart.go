@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/sqlite"
-	"github.com/masudur-rahman/styx/sql/sqlite/lib"
+	"github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 )
 
 type User struct {

@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	isql "github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/sqlite"
+	isql "github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite"
 )
 
 // Example_stmtCache enables prepared-statement caching with WithStmtCache.
