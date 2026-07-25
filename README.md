@@ -35,6 +35,7 @@ go test ./examples/
 | CRUD + filters (ID / Where / struct filter / Columns) | [`example_crud_test.go`](examples/example_crud_test.go) |
 | Ordering, pagination, LIKE / IN, aggregates + GROUP BY | [`example_query_test.go`](examples/example_query_test.go) |
 | Row count (`Count`, soft-delete aware) | [`example_count_test.go`](examples/example_count_test.go) |
+| Ignore (`db:"-"`) and `notnull` tags | [`example_tags_test.go`](examples/example_tags_test.go) |
 | Bulk insert (single multi-row `INSERT`) | [`example_bulk_test.go`](examples/example_bulk_test.go) |
 | Lifecycle hooks (`BeforeCreate`, `AfterFind`, …) | [`example_hooks_test.go`](examples/example_hooks_test.go) |
 | Validation (tag rules + custom `Validate()`) | [`example_validation_test.go`](examples/example_validation_test.go) |
