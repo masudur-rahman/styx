@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/masudur-rahman/styx/dberr"
-	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	"github.com/masudur-rahman/styx/v2/sql"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

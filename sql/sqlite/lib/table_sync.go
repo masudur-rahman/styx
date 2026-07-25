@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	core "github.com/masudur-rahman/styx/sql/internal/core"
+	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
 
 	"github.com/iancoleman/strcase"
 )

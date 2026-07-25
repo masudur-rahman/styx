@@ -4,7 +4,7 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/v2/sql"
 )
 
 // RunBeforeCreate invokes the BeforeCreate hook if doc implements it.

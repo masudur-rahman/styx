@@ -7,11 +7,11 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/masudur-rahman/styx/dberr"
-	isql "github.com/masudur-rahman/styx/sql"
-	core "github.com/masudur-rahman/styx/sql/internal/core"
-	"github.com/masudur-rahman/styx/sql/postgres/lib"
-	"github.com/masudur-rahman/styx/validation"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	isql "github.com/masudur-rahman/styx/v2/sql"
+	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
+	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
+	"github.com/masudur-rahman/styx/v2/validation"
 )
 
 type Postgres struct {

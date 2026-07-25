@@ -1,4 +1,4 @@
-module github.com/masudur-rahman/styx
+module github.com/masudur-rahman/styx/v2
 
 go 1.20
 

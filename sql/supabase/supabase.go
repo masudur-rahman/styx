@@ -9,8 +9,8 @@ import (
 	"database/sql"
 	"log"
 
-	"github.com/masudur-rahman/styx/dberr"
-	isql "github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	isql "github.com/masudur-rahman/styx/v2/sql"
 
 	"github.com/nedpals/supabase-go"
 )

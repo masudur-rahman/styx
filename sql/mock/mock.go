@@ -10,7 +10,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	sql0 "github.com/masudur-rahman/styx/sql"
+	sql0 "github.com/masudur-rahman/styx/v2/sql"
 )
 
 // MockEngine is a mock of Engine interface.

@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	isql "github.com/masudur-rahman/styx/sql"
+	isql "github.com/masudur-rahman/styx/v2/sql"
 )
 
 const (

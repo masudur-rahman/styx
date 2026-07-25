@@ -3,7 +3,7 @@ package examples_test
 import (
 	"fmt"
 
-	isql "github.com/masudur-rahman/styx/sql"
+	isql "github.com/masudur-rahman/styx/v2/sql"
 )
 
 // Example_orderingAndPagination shows OrderBy together with Paginate.

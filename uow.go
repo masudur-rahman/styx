@@ -4,9 +4,9 @@ import (
 	"context"
 	"log"
 
-	"github.com/masudur-rahman/styx/dberr"
-	"github.com/masudur-rahman/styx/nosql"
-	"github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/v2/dberr"
+	"github.com/masudur-rahman/styx/v2/nosql"
+	"github.com/masudur-rahman/styx/v2/sql"
 )
 
 // UnitOfWork coordinates work across a SQL and a NoSQL engine.

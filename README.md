@@ -5,7 +5,7 @@ Database Engine for different SQL and NoSQL databases.
 ## Install
 
 ```shell
-go get -u github.com/masudur-rahman/styx
+go get -u github.com/masudur-rahman/styx/v2
 ```
 
 ## Supported Databases
@@ -62,9 +62,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/sqlite"
-	"github.com/masudur-rahman/styx/sql/sqlite/lib"
+	"github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 )
 
 type User struct {
@@ -264,7 +264,7 @@ All database engines implement the `sql.Engine` interface. Methods are chainable
 Build aggregate columns with the `sql.Count/Sum/Avg/Min/Max` expression helpers
 and `Select`, then scan them into a struct. Use `.As(alias)` to name a column:
 ```go
-import isql "github.com/masudur-rahman/styx/sql"
+import isql "github.com/masudur-rahman/styx/v2/sql"
 
 db.Table("sale").
     Columns("product").

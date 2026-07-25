@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
-	isql "github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/sqlite"
+	isql "github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

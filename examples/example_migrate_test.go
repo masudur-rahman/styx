@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/masudur-rahman/styx/migrate"
-	isql "github.com/masudur-rahman/styx/sql"
+	"github.com/masudur-rahman/styx/v2/migrate"
+	isql "github.com/masudur-rahman/styx/v2/sql"
 )
 
 // Example_migrate shows the versioned migration runner for destructive changes

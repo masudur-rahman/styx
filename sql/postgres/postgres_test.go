@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/postgres"
-	"github.com/masudur-rahman/styx/sql/postgres/lib"
+	"github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/postgres"
+	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
 
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"

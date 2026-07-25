@@ -9,7 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	nosql "github.com/masudur-rahman/styx/nosql"
+	nosql "github.com/masudur-rahman/styx/v2/nosql"
 )
 
 // MockEngine is a mock of Engine interface.

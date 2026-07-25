@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	isql "github.com/masudur-rahman/styx/sql"
-	"github.com/masudur-rahman/styx/sql/sqlite"
+	isql "github.com/masudur-rahman/styx/v2/sql"
+	"github.com/masudur-rahman/styx/v2/sql/sqlite"
 )
 
 // Example_pool shows tuning the underlying database/sql connection pool with
