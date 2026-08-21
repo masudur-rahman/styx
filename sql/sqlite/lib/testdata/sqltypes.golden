@@ -1,0 +1,45 @@
+## Int
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT"
+
+## Int32
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT"
+
+## Int64
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT"
+
+## Uint64
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT"
+
+## Float32
+plain="REAL" autoincr="REAL"
+
+## Float64
+plain="REAL" autoincr="REAL"
+
+## Bool
+plain="BOOLEAN" autoincr="BOOLEAN"
+
+## String
+plain="TEXT" autoincr="TEXT"
+
+## Bytes
+plain="BLOB" autoincr="BLOB"
+
+## Time
+plain="DATETIME" autoincr="DATETIME"
+
+## IntPtr
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT"
+
+## Int64Ptr
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT"
+
+## StringPtr
+plain="TEXT" autoincr="TEXT"
+
+## BoolPtr
+plain="BOOLEAN" autoincr="BOOLEAN"
+
+## TimePtr
+plain="DATETIME" autoincr="DATETIME"
+

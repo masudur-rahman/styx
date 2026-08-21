@@ -1,0 +1,45 @@
+## Int
+plain="INTEGER" autoincr="SERIAL"
+
+## Int32
+plain="INTEGER" autoincr="SERIAL"
+
+## Int64
+plain="BIGINT" autoincr="BIGSERIAL"
+
+## Uint64
+plain="BIGINT" autoincr="BIGSERIAL"
+
+## Float32
+plain="FLOAT" autoincr="FLOAT"
+
+## Float64
+plain="FLOAT" autoincr="FLOAT"
+
+## Bool
+plain="BOOLEAN" autoincr="BOOLEAN"
+
+## String
+plain="VARCHAR(255)" autoincr="VARCHAR(255)"
+
+## Bytes
+plain="BYTEA" autoincr="BYTEA"
+
+## Time
+plain="TIMESTAMP WITH TIME ZONE" autoincr="TIMESTAMP WITH TIME ZONE"
+
+## IntPtr
+plain="INTEGER" autoincr="SERIAL"
+
+## Int64Ptr
+plain="BIGINT" autoincr="BIGSERIAL"
+
+## StringPtr
+plain="VARCHAR(255)" autoincr="VARCHAR(255)"
+
+## BoolPtr
+plain="BOOLEAN" autoincr="BOOLEAN"
+
+## TimePtr
+plain="TIMESTAMP WITH TIME ZONE" autoincr="TIMESTAMP WITH TIME ZONE"
+

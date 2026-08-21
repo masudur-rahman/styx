@@ -219,28 +219,31 @@ func ExtractSoftDeleteColumn(table any) string {
 	return ""
 }
 
+// getUniqueColumnGroups returns the unique-constraint column groups declared by
+// uqs tags, in field declaration order.
+//
+// Groups are accumulated into a slice rather than a map because constraint
+// names are derived from the group's position: map iteration order is
+// randomised, so the same struct produced differently named constraints on
+// different runs.
 func getUniqueColumnGroups(t reflect.Type) [][]string {
-	groups := map[int][]string{}
-	groupIndex := 0
+	groups := [][]string{}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if dbTag := field.Tag.Get("db"); dbTag != "" {
-			tagParts := strings.Split(dbTag, ",")
-			for _, part := range tagParts[1:] {
-				if strings.ToUpper(part) == "UQS" {
-					groups[groupIndex] = append(groups[groupIndex], getFieldName(field))
-					groupIndex++
-				}
+		dbTag := field.Tag.Get("db")
+		if dbTag == "" {
+			continue
+		}
+
+		tagParts := strings.Split(dbTag, ",")
+		for _, part := range tagParts[1:] {
+			if strings.ToUpper(part) == "UQS" {
+				groups = append(groups, []string{getFieldName(field)})
 			}
 		}
 	}
 
-	result := [][]string{}
-	for _, group := range groups {
-		result = append(result, group)
-	}
-
-	return result
+	return groups
 }
 
 func getExistingColumns(ctx context.Context, conn *sql.DB, tableName string) ([]string, error) {
@@ -461,6 +464,7 @@ func extractIndexes(table any) []indexInfo {
 	}
 
 	named := map[string]*indexInfo{}
+	var namedOrder []string
 	var unnamed []indexInfo
 
 	for i := 0; i < tableType.NumField(); i++ {
@@ -490,6 +494,7 @@ func extractIndexes(table any) []indexInfo {
 					existing.Cols = append(existing.Cols, colName)
 				} else {
 					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}}
+					namedOrder = append(namedOrder, idxName)
 				}
 			} else if strings.HasPrefix(lp, "uidx:") {
 				idxName := strings.TrimPrefix(lp, "uidx:")
@@ -497,14 +502,17 @@ func extractIndexes(table any) []indexInfo {
 					existing.Cols = append(existing.Cols, colName)
 				} else {
 					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}, Unique: true}
+					namedOrder = append(namedOrder, idxName)
 				}
 			}
 		}
 	}
 
+	// namedOrder preserves first-declaration order. Ranging the map directly
+	// emitted CREATE INDEX statements in a different order on every run.
 	var result []indexInfo
-	for _, idx := range named {
-		result = append(result, *idx)
+	for _, name := range namedOrder {
+		result = append(result, *named[name])
 	}
 	return append(result, unnamed...)
 }

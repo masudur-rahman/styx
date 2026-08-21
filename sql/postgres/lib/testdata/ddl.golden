@@ -1,0 +1,150 @@
+## scalars/create
+CREATE TABLE "scalars" (int INTEGER, int_32 INTEGER, int_64 BIGINT, uint_64 BIGINT, float_32 FLOAT, float_64 FLOAT, bool BOOLEAN, string VARCHAR(255), bytes BYTEA, time TIMESTAMP WITH TIME ZONE, int_ptr INTEGER, int_64_ptr BIGINT, string_ptr VARCHAR(255), bool_ptr BOOLEAN, time_ptr TIMESTAMP WITH TIME ZONE);
+
+## scalars/add-columns
+ALTER TABLE "scalars" ADD COLUMN int INTEGER, ADD COLUMN int_32 INTEGER, ADD COLUMN int_64 BIGINT, ADD COLUMN uint_64 BIGINT, ADD COLUMN float_32 FLOAT, ADD COLUMN float_64 FLOAT, ADD COLUMN bool BOOLEAN, ADD COLUMN string VARCHAR(255), ADD COLUMN bytes BYTEA, ADD COLUMN time TIMESTAMP WITH TIME ZONE, ADD COLUMN int_ptr INTEGER, ADD COLUMN int_64_ptr BIGINT, ADD COLUMN string_ptr VARCHAR(255), ADD COLUMN bool_ptr BOOLEAN, ADD COLUMN time_ptr TIMESTAMP WITH TIME ZONE
+
+## scalars/pk
+id
+
+## scalars/soft-delete
+""
+
+## scalars/unique-groups
+[]
+
+## scalars/indexes
+[]
+
+## constraints/create
+CREATE TABLE "constraints" (id BIGSERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE, name VARCHAR(255) NOT NULL, slug VARCHAR(255) UNIQUE NOT NULL, required VARCHAR(255), custom_column VARCHAR(255), untagged VARCHAR(255), empty_name VARCHAR(255));
+
+## constraints/add-columns
+ALTER TABLE "constraints" ADD COLUMN id BIGSERIAL PRIMARY KEY, ADD COLUMN email VARCHAR(255) UNIQUE, ADD COLUMN name VARCHAR(255) NOT NULL, ADD COLUMN slug VARCHAR(255) UNIQUE NOT NULL, ADD COLUMN required VARCHAR(255), ADD COLUMN custom_column VARCHAR(255), ADD COLUMN untagged VARCHAR(255), ADD COLUMN empty_name VARCHAR(255)
+
+## constraints/pk
+id
+
+## constraints/soft-delete
+""
+
+## constraints/unique-groups
+[]
+
+## constraints/indexes
+[]
+
+## composite_unique/create
+CREATE TABLE "composite_unique" (id BIGSERIAL PRIMARY KEY, tenant VARCHAR(255), code VARCHAR(255), note VARCHAR(255), UNIQUE(tenant, code));
+
+## composite_unique/add-columns
+ALTER TABLE "composite_unique" ADD COLUMN id BIGSERIAL PRIMARY KEY, ADD COLUMN tenant VARCHAR(255), ADD COLUMN code VARCHAR(255), ADD COLUMN note VARCHAR(255)
+
+## composite_unique/pk
+id
+
+## composite_unique/soft-delete
+""
+
+## composite_unique/unique-groups
+[[tenant] [code]]
+
+## composite_unique/indexes
+[]
+
+## composite_unique/add-constraint
+ALTER TABLE "composite_unique" ADD CONSTRAINT composite_unique_uq_0 UNIQUE(tenant), ADD CONSTRAINT composite_unique_uq_1 UNIQUE(code)
+
+## composite_unique/drop-constraint
+ALTER TABLE "composite_unique" DROP CONSTRAINT IF EXISTS composite_unique_uq_0, DROP CONSTRAINT IF EXISTS composite_unique_uq_1
+
+## indexed/create
+CREATE TABLE "indexed" (id BIGSERIAL PRIMARY KEY, email VARCHAR(255), status VARCHAR(255), tenant VARCHAR(255), code VARCHAR(255), region VARCHAR(255), zone VARCHAR(255), untagged VARCHAR(255));
+
+## indexed/add-columns
+ALTER TABLE "indexed" ADD COLUMN id BIGSERIAL PRIMARY KEY, ADD COLUMN email VARCHAR(255), ADD COLUMN status VARCHAR(255), ADD COLUMN tenant VARCHAR(255), ADD COLUMN code VARCHAR(255), ADD COLUMN region VARCHAR(255), ADD COLUMN zone VARCHAR(255), ADD COLUMN untagged VARCHAR(255)
+
+## indexed/pk
+id
+
+## indexed/soft-delete
+""
+
+## indexed/unique-groups
+[]
+
+## indexed/indexes
+[{Name:tenant_code Cols:[tenant code] Unique:false} {Name:region_zone Cols:[region zone] Unique:true} {Name: Cols:[email] Unique:true} {Name: Cols:[status] Unique:false}]
+
+## soft_deletable/create
+CREATE TABLE "soft_deletable" (id BIGSERIAL PRIMARY KEY, name VARCHAR(255), deleted_at TIMESTAMP WITH TIME ZONE);
+
+## soft_deletable/add-columns
+ALTER TABLE "soft_deletable" ADD COLUMN id BIGSERIAL PRIMARY KEY, ADD COLUMN name VARCHAR(255), ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE
+
+## soft_deletable/pk
+id
+
+## soft_deletable/soft-delete
+""
+
+## soft_deletable/unique-groups
+[]
+
+## soft_deletable/indexes
+[]
+
+## json_doc/create
+CREATE TABLE "json_doc" (id BIGSERIAL PRIMARY KEY, payload JSONB, raw JSONB);
+
+## json_doc/add-columns
+ALTER TABLE "json_doc" ADD COLUMN id BIGSERIAL PRIMARY KEY, ADD COLUMN payload JSONB, ADD COLUMN raw JSONB
+
+## json_doc/pk
+id
+
+## json_doc/soft-delete
+""
+
+## json_doc/unique-groups
+[]
+
+## json_doc/indexes
+[]
+
+## string_pk/create
+CREATE TABLE "string_pk" (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255));
+
+## string_pk/add-columns
+ALTER TABLE "string_pk" ADD COLUMN id VARCHAR(255) PRIMARY KEY, ADD COLUMN name VARCHAR(255)
+
+## string_pk/pk
+id
+
+## string_pk/soft-delete
+""
+
+## string_pk/unique-groups
+[]
+
+## string_pk/indexes
+[]
+
+## time_pk/create
+CREATE TABLE "time_pk" (at TIMESTAMP WITH TIME ZONE PRIMARY KEY, name VARCHAR(255));
+
+## time_pk/add-columns
+ALTER TABLE "time_pk" ADD COLUMN at TIMESTAMP WITH TIME ZONE PRIMARY KEY, ADD COLUMN name VARCHAR(255)
+
+## time_pk/pk
+at
+
+## time_pk/soft-delete
+""
+
+## time_pk/unique-groups
+[]
+
+## time_pk/indexes
+[]
+
