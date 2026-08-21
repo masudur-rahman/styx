@@ -10,7 +10,7 @@ import (
 	"github.com/masudur-rahman/styx/v2/dberr"
 	isql "github.com/masudur-rahman/styx/v2/sql"
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
-	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
+	lib "github.com/masudur-rahman/styx/v2/sql/internal/lib"
 	"github.com/masudur-rahman/styx/v2/validation"
 )
 
@@ -187,7 +187,7 @@ func (pg Postgres) preload(ctx context.Context, docs any) error {
 		return nil
 	}
 	base := pg
-	base.statement = lib.Statement{}
+	base.statement = lib.NewStatement(lib.Postgres)
 	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
@@ -542,7 +542,7 @@ func (pg Postgres) Exec(ctx context.Context, query string, args ...any) (sql.Res
 
 func (pg Postgres) Sync(ctx context.Context, tables ...any) error {
 	for _, table := range tables {
-		if err := lib.SyncTable(ctx, pg.conn, table); err != nil {
+		if err := lib.SyncTable(ctx, lib.Postgres, pg.conn, table); err != nil {
 			return err
 		}
 		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
@@ -565,5 +565,5 @@ func (pg Postgres) Close() error {
 }
 
 func (pg Postgres) cleanup() {
-	pg.statement = lib.Statement{}
+	pg.statement = lib.NewStatement(lib.Postgres)
 }

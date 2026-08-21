@@ -7,18 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_generateReadQuery(t *testing.T) {
-	t.Run("Generate Read Query", func(t *testing.T) {
-		tableName := "user"
-		params := map[string]interface{}{
-			"id":   "abcd",
-			"name": "masud",
-		}
-		query := GenerateReadQuery(tableName, params)
-		assert.NotEmpty(t, query)
-	})
-}
-
 type insertTestDoc struct {
 	ID    int64  `db:"id,pk autoincr"`
 	Name  string `db:"name"`
@@ -26,8 +14,8 @@ type insertTestDoc struct {
 	Score int    `db:"score"`
 }
 
-func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
-	stmt := new(Statement).Table("test_doc")
+func TestGenerateInsertQuery_skipsZeroValues_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("test_doc")
 	doc := insertTestDoc{Name: "alice", Email: "alice@test.com"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -40,8 +28,8 @@ func TestGenerateInsertQuery_skipsZeroValues(t *testing.T) {
 	assert.Equal(t, []any{"alice", "alice@test.com"}, stmt.args)
 }
 
-func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
-	stmt := new(Statement).Table("test_doc").MustCols("score")
+func TestGenerateInsertQuery_mustColsIncludesZeroValues_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("test_doc").MustCols("score")
 	doc := insertTestDoc{Name: "alice"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -51,8 +39,8 @@ func TestGenerateInsertQuery_mustColsIncludesZeroValues(t *testing.T) {
 	assert.Contains(t, query, "$1")
 }
 
-func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
-	stmt := new(Statement).Table("test_doc").AllCols()
+func TestGenerateInsertQuery_allColsIncludesAllFields_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("test_doc").AllCols()
 	doc := insertTestDoc{Name: "alice"}
 
 	query := stmt.GenerateInsertQuery(doc)
@@ -63,8 +51,8 @@ func TestGenerateInsertQuery_allColsIncludesAllFields(t *testing.T) {
 	assert.Contains(t, query, "score")
 }
 
-func TestGenerateBulkInsertQuery_singleStatementNumberedPlaceholders(t *testing.T) {
-	stmt := new(Statement).Table("test_doc")
+func TestGenerateBulkInsertQuery_singleStatementNumberedPlaceholders_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("test_doc")
 	docs := []any{
 		insertTestDoc{Name: "alice", Email: "alice@test.com"},
 		insertTestDoc{Name: "bob", Email: "bob@test.com"},
@@ -77,8 +65,8 @@ func TestGenerateBulkInsertQuery_singleStatementNumberedPlaceholders(t *testing.
 	assert.Equal(t, []any{"alice", "alice@test.com", "bob", "bob@test.com"}, stmt.args)
 }
 
-func TestGenerateBulkInsertQuery_columnUnionAcrossDocs(t *testing.T) {
-	stmt := new(Statement).Table("test_doc")
+func TestGenerateBulkInsertQuery_columnUnionAcrossDocs_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("test_doc")
 	docs := []any{
 		insertTestDoc{Name: "alice"},
 		insertTestDoc{Name: "bob", Score: 7},
@@ -103,11 +91,11 @@ type jsonTestDoc struct {
 	Blob    []byte          `db:"blob"`
 }
 
-func TestCreateTableQuery_jsonColumns(t *testing.T) {
-	fields, err := getTableInfo(jsonTestDoc{})
+func TestCreateTableQuery_jsonColumns_postgres(t *testing.T) {
+	fields, err := getTableInfo(Postgres, jsonTestDoc{})
 	assert.NoError(t, err)
 
-	query := createTableQuery("json_test_doc", fields)
+	query := createTableQuery(Postgres, "json_test_doc", fields)
 
 	assert.Contains(t, query, "payload JSONB")
 	assert.Contains(t, query, "address JSONB")
@@ -115,8 +103,8 @@ func TestCreateTableQuery_jsonColumns(t *testing.T) {
 	assert.NotContains(t, query, ", ,", "no field may end up without a SQL type")
 }
 
-func TestGenerateInsertQuery_jsonArgsAsText(t *testing.T) {
-	stmt := new(Statement).Table("json_test_doc")
+func TestGenerateInsertQuery_jsonArgsAsText_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("json_test_doc")
 	doc := jsonTestDoc{
 		Name:    "alice",
 		Payload: json.RawMessage(`{"a":1}`),
@@ -130,8 +118,8 @@ func TestGenerateInsertQuery_jsonArgsAsText(t *testing.T) {
 	assert.Equal(t, []any{"alice", `{"a":1}`, `{"street":"Road 1","city":"Dhaka"}`}, stmt.args)
 }
 
-func TestGenerateUpdateQuery_jsonArgsAsText(t *testing.T) {
-	stmt := new(Statement).Table("json_test_doc").Where("id = ?", 7)
+func TestGenerateUpdateQuery_jsonArgsAsText_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("json_test_doc").Where("id = ?", 7)
 	doc := jsonTestDoc{Payload: json.RawMessage(`{"b":2}`)}
 
 	query := stmt.GenerateUpdateQuery(doc)
@@ -140,13 +128,13 @@ func TestGenerateUpdateQuery_jsonArgsAsText(t *testing.T) {
 	assert.Equal(t, []any{`{"b":2}`, 7}, stmt.args)
 }
 
-func TestWith_postgresRenumbersAndOrdersArgs(t *testing.T) {
-	sub := new(Statement).Table("orders").Columns("user_id")
+func TestWith_postgresRenumbersAndOrdersArgs_postgres(t *testing.T) {
+	sub := newStatement(Postgres).Table("orders").Columns("user_id")
 	sub.Where("total > ?", 1000)
 	subSQL := sub.GenerateReadQuery(nil)
 	subArgs := sub.Args()
 
-	outer := new(Statement).Table("users")
+	outer := newStatement(Postgres).Table("users")
 	outer.With("big", subSQL, subArgs)
 	outer.Where("active = ?", true)
 	q := outer.GenerateReadQuery(nil)
@@ -156,11 +144,11 @@ func TestWith_postgresRenumbersAndOrdersArgs(t *testing.T) {
 	assert.Equal(t, []any{1000, true}, outer.Args())
 }
 
-func TestWith_postgresRenumbersWhenCalledAfterWhere(t *testing.T) {
-	sub := new(Statement).Table("orders").Columns("user_id")
+func TestWith_postgresRenumbersWhenCalledAfterWhere_postgres(t *testing.T) {
+	sub := newStatement(Postgres).Table("orders").Columns("user_id")
 	sub.Where("total > ?", 1000)
 
-	outer := new(Statement).Table("users")
+	outer := newStatement(Postgres).Table("users")
 	outer.Where("active = ?", true)
 	outer.With("big", sub.GenerateReadQuery(nil), sub.Args())
 	q := outer.GenerateReadQuery(nil)
@@ -170,8 +158,8 @@ func TestWith_postgresRenumbersWhenCalledAfterWhere(t *testing.T) {
 	assert.Equal(t, []any{true, 1000}, outer.Args())
 }
 
-func TestGenerateCountQuery_postgresWhere(t *testing.T) {
-	stmt := new(Statement).Table("account").Where("age > ?", 18)
+func TestGenerateCountQuery_postgresWhere_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("account").Where("age > ?", 18)
 
 	q := stmt.GenerateCountQuery()
 
@@ -179,8 +167,8 @@ func TestGenerateCountQuery_postgresWhere(t *testing.T) {
 	assert.Contains(t, q, "WHERE")
 }
 
-func TestGenerateCountQuery_postgresExcludesSoftDeleted(t *testing.T) {
-	stmt := new(Statement).Table("account")
+func TestGenerateCountQuery_postgresExcludesSoftDeleted_postgres(t *testing.T) {
+	stmt := newStatement(Postgres).Table("account")
 	stmt.SoftDeleteCol("deleted_at")
 
 	q := stmt.GenerateCountQuery()
@@ -189,16 +177,16 @@ func TestGenerateCountQuery_postgresExcludesSoftDeleted(t *testing.T) {
 	assert.Contains(t, q, "deleted_at IS NULL")
 }
 
-func TestCreateTableQuery_notNull(t *testing.T) {
+func TestCreateTableQuery_notNull_postgres(t *testing.T) {
 	type notNullDoc struct {
 		ID   int64  `db:"id,pk autoincr"`
 		Name string `db:"name,notnull"`
 		Note string `db:"note"`
 	}
-	fields, err := getTableInfo(notNullDoc{})
+	fields, err := getTableInfo(Postgres, notNullDoc{})
 	assert.NoError(t, err)
 
-	query := createTableQuery("not_null_doc", fields)
+	query := createTableQuery(Postgres, "not_null_doc", fields)
 
 	assert.Contains(t, query, "NOT NULL")
 	assert.Contains(t, query, "name")

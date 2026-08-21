@@ -13,15 +13,36 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files instead of comparing")
 
+// TestGolden runs the whole corpus against every dialect. The golden files were
+// copied verbatim from the per-dialect packages this one replaced, so a passing
+// run is proof the merge changed no emitted SQL.
+func TestGolden(t *testing.T) {
+	for _, d := range []Dialect{Postgres, SQLite} {
+		d := d
+		t.Run(d.Name(), func(t *testing.T) {
+			goldenDDL(t, d)
+			goldenSQLTypes(t, d)
+			goldenStatements(t, d)
+		})
+	}
+}
+
+// newStatement returns an addressable statement for the given dialect.
+func newStatement(d Dialect) *Statement {
+	s := NewStatement(d)
+	return &s
+}
+
 // TestGolden_DDL pins every DDL artefact the library derives from a struct.
-func TestGolden_DDL(t *testing.T) {
+func goldenDDL(t *testing.T, d Dialect) {
+	t.Helper()
 	var out sqltest.Section
 
 	for _, tbl := range sqltest.Tables() {
-		fields, err := getTableInfo(tbl.Value)
+		fields, err := getTableInfo(d, tbl.Value)
 		require.NoError(t, err, tbl.Name)
 
-		out.Add(tbl.Name+"/create", createTableQuery(tbl.Name, fields))
+		out.Add(tbl.Name+"/create", createTableQuery(d, tbl.Name, fields))
 
 		var cols []string
 		for _, f := range fields {
@@ -41,26 +62,28 @@ func TestGolden_DDL(t *testing.T) {
 		}
 	}
 
-	require.NoError(t, sqltest.Compare("ddl", out.String(), *update))
+	require.NoError(t, sqltest.Compare(d.Name()+"_ddl", out.String(), *update))
 }
 
 // TestGolden_SQLTypes pins the Go-kind to column-type mapping.
-func TestGolden_SQLTypes(t *testing.T) {
+func goldenSQLTypes(t *testing.T, d Dialect) {
+	t.Helper()
 	var out sqltest.Section
 
 	st := reflect.TypeOf(sqltest.Scalars{})
 	for i := 0; i < st.NumField(); i++ {
 		f := st.Field(i)
 		out.Addf(f.Name, "plain=%q autoincr=%q",
-			getSQLType(f.Type, false), getSQLType(f.Type, true))
+			d.SQLType(f.Type, false), d.SQLType(f.Type, true))
 	}
 
-	require.NoError(t, sqltest.Compare("sqltypes", out.String(), *update))
+	require.NoError(t, sqltest.Compare(d.Name()+"_sqltypes", out.String(), *update))
 }
 
 // TestGolden_Statements pins the generated SQL and bound args for every
 // builder combination, including placeholder numbering and CTE arg ordering.
-func TestGolden_Statements(t *testing.T) {
+func goldenStatements(t *testing.T, d Dialect) {
+	t.Helper()
 	doc := sqltest.InsertDoc{Name: "alice", Email: "alice@test.com", Score: 7}
 
 	cases := []struct {
@@ -177,12 +200,12 @@ func TestGolden_Statements(t *testing.T) {
 
 	var out sqltest.Section
 	for _, tc := range cases {
-		stmt := new(Statement)
+		stmt := newStatement(d)
 		query := tc.render(stmt)
 		out.Addf(tc.name, "sql:  %s\nargs: %#v", query, stmt.Args())
 	}
 
-	require.NoError(t, sqltest.Compare("statements", out.String(), *update))
+	require.NoError(t, sqltest.Compare(d.Name()+"_statements", out.String(), *update))
 }
 
 // TestGetUniqueColumnGroups_deterministic guards the ordering that constraint

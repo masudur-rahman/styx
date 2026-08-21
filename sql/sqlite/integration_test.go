@@ -9,7 +9,6 @@ import (
 
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/sqlite"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -30,7 +29,7 @@ type Post struct {
 }
 
 func setupDB(t *testing.T) sql.Engine {
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 
 	db := sqlite.NewSQLite(conn)
@@ -130,7 +129,7 @@ type Event struct {
 
 func TestIntegration_JSONFields(t *testing.T) {
 	ctx := context.Background()
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 	db := sqlite.NewSQLite(conn)
 	assert.NoError(t, db.Sync(ctx, Event{}))
@@ -208,7 +207,7 @@ type widget struct {
 
 func TestIgnoreTag_notPersisted(t *testing.T) {
 	ctx := context.Background()
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 	db := sqlite.NewSQLite(conn)
 
@@ -236,7 +235,7 @@ type account struct {
 
 func TestNotNull_rejectsMissingValue(t *testing.T) {
 	ctx := context.Background()
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 	db := sqlite.NewSQLite(conn)
 	assert.NoError(t, db.Sync(ctx, account{}))

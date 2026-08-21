@@ -6,7 +6,6 @@ import (
 
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/sqlite"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 )
 
 type User struct {
@@ -21,7 +20,7 @@ func main() {
 	ctx := context.Background()
 
 	// Create sqlite connection
-	conn, _ := lib.GetSQLiteConnection("test.db")
+	conn, _ := sqlite.GetSQLiteConnection("test.db")
 
 	// Start a database engine
 	var db sql.Engine

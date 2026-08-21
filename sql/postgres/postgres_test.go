@@ -8,7 +8,6 @@ import (
 
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/postgres"
-	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
 
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +23,7 @@ type TestUser struct {
 }
 
 func initializeDB(t *testing.T) (sql.Engine, func() error) {
-	cfg := lib.PostgresConfig{
+	cfg := postgres.PostgresConfig{
 		Name:     "test",
 		Host:     "localhost",
 		Port:     "5432",
@@ -33,7 +32,7 @@ func initializeDB(t *testing.T) (sql.Engine, func() error) {
 		SSLMode:  "disable",
 	}
 
-	conn, err := lib.GetPostgresConnection(cfg)
+	conn, err := postgres.GetPostgresConnection(cfg)
 	require.Nil(t, err)
 
 	return postgres.NewPostgres(conn).ShowSQL(true), conn.Close

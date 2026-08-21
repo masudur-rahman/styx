@@ -10,7 +10,7 @@ import (
 	"github.com/masudur-rahman/styx/v2/dberr"
 	isql "github.com/masudur-rahman/styx/v2/sql"
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
+	lib "github.com/masudur-rahman/styx/v2/sql/internal/lib"
 	"github.com/masudur-rahman/styx/v2/validation"
 
 	_ "modernc.org/sqlite"
@@ -189,7 +189,7 @@ func (sq SQLite) preload(ctx context.Context, docs any) error {
 		return nil
 	}
 	base := sq
-	base.statement = lib.Statement{}
+	base.statement = lib.NewStatement(lib.SQLite)
 	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
@@ -544,7 +544,7 @@ func (sq SQLite) Exec(ctx context.Context, query string, args ...any) (sql.Resul
 
 func (sq SQLite) Sync(ctx context.Context, tables ...any) error {
 	for _, table := range tables {
-		if err := lib.SyncTable(ctx, sq.conn, table); err != nil {
+		if err := lib.SyncTable(ctx, lib.SQLite, sq.conn, table); err != nil {
 			return err
 		}
 		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
@@ -567,5 +567,5 @@ func (sq SQLite) Stats() sql.DBStats {
 }
 
 func (sq SQLite) cleanup() {
-	sq.statement = lib.Statement{}
+	sq.statement = lib.NewStatement(lib.SQLite)
 }

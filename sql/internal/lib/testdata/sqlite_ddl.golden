@@ -17,10 +17,10 @@ id
 []
 
 ## constraints/create
-CREATE TABLE IF NOT EXISTS "constraints" (id INTEGER PRIMARY KEY AUTOINCREMENT , email TEXT UNIQUE, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, required TEXT, custom_column TEXT, untagged TEXT, empty_name TEXT);
+CREATE TABLE IF NOT EXISTS "constraints" (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, required TEXT, custom_column TEXT, untagged TEXT, empty_name TEXT);
 
 ## constraints/add-columns
-ALTER TABLE "constraints" ADD COLUMN id INTEGER PRIMARY KEY AUTOINCREMENT , ADD COLUMN email TEXT UNIQUE, ADD COLUMN name TEXT NOT NULL, ADD COLUMN slug TEXT UNIQUE NOT NULL, ADD COLUMN required TEXT, ADD COLUMN custom_column TEXT, ADD COLUMN untagged TEXT, ADD COLUMN empty_name TEXT
+ALTER TABLE "constraints" ADD COLUMN id INTEGER PRIMARY KEY AUTOINCREMENT, ADD COLUMN email TEXT UNIQUE, ADD COLUMN name TEXT NOT NULL, ADD COLUMN slug TEXT UNIQUE NOT NULL, ADD COLUMN required TEXT, ADD COLUMN custom_column TEXT, ADD COLUMN untagged TEXT, ADD COLUMN empty_name TEXT
 
 ## constraints/pk
 id
@@ -53,10 +53,10 @@ id
 []
 
 ## composite_unique/add-constraint
-ALTER TABLE composite_unique ADD CONSTRAINT composite_unique_uq_0 UNIQUE(tenant), ADD CONSTRAINT composite_unique_uq_1 UNIQUE(code)
+ALTER TABLE "composite_unique" ADD CONSTRAINT composite_unique_uq_0 UNIQUE(tenant), ADD CONSTRAINT composite_unique_uq_1 UNIQUE(code)
 
 ## composite_unique/drop-constraint
-ALTER TABLE composite_unique DROP CONSTRAINT IF EXISTS composite_unique_uq_0, DROP CONSTRAINT IF EXISTS composite_unique_uq_1
+ALTER TABLE "composite_unique" DROP CONSTRAINT IF EXISTS composite_unique_uq_0, DROP CONSTRAINT IF EXISTS composite_unique_uq_1
 
 ## indexed/create
 CREATE TABLE IF NOT EXISTS "indexed" (id INTEGER PRIMARY KEY, email TEXT, status TEXT, tenant TEXT, code TEXT, region TEXT, zone TEXT, untagged TEXT);

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
 
@@ -23,7 +22,7 @@ func GenerateTableName(table interface{}) string {
 	return core.GetTableName(table)
 }
 
-func getTableInfo(table interface{}) ([]fieldInfo, error) {
+func getTableInfo(d Dialect, table interface{}) ([]fieldInfo, error) {
 	tableType := reflect.TypeOf(table)
 	tableValue := reflect.ValueOf(table)
 
@@ -48,7 +47,7 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 			continue
 		}
 
-		field := getFieldInfo(fieldType, fieldValue)
+		field := getFieldInfo(d, fieldType, fieldValue)
 
 		fields = append(fields, field)
 	}
@@ -56,14 +55,14 @@ func getTableInfo(table interface{}) ([]fieldInfo, error) {
 	return fields, nil
 }
 
-func createTable(ctx context.Context, conn *sql.DB, tableName string, fields []fieldInfo) error {
-	query := createTableQuery(tableName, fields)
+func createTable(ctx context.Context, d Dialect, conn *sql.DB, tableName string, fields []fieldInfo) error {
+	query := createTableQuery(d, tableName, fields)
 	_, err := ExecuteWriteQuery(ctx, query, conn)
 	return err
 }
 
-func addMissingColumns(ctx context.Context, conn *sql.DB, tableName string, fields []fieldInfo) error {
-	columns, err := getExistingColumns(ctx, conn, tableName)
+func addMissingColumns(ctx context.Context, d Dialect, conn *sql.DB, tableName string, fields []fieldInfo) error {
+	columns, err := getExistingColumns(ctx, d, conn, tableName)
 	if err != nil {
 		return err
 	}
@@ -73,74 +72,104 @@ func addMissingColumns(ctx context.Context, conn *sql.DB, tableName string, fiel
 		alterQuery := generateAddColumnQuery(tableName, missingColumns)
 		_, err = ExecuteWriteQuery(ctx, alterQuery, conn)
 		if err != nil {
-			return err
+			return fmt.Errorf("error adding columns to table %s: %v (query: %s)", tableName, err, alterQuery)
 		}
 	}
 	return nil
 }
 
-func getFieldInfo(fieldType reflect.StructField, fieldValue reflect.Value) fieldInfo {
+func getFieldInfo(d Dialect, fieldType reflect.StructField, fieldValue reflect.Value) fieldInfo {
 	fieldName := getFieldName(fieldType)
-	columnConstraint, autoincr, isComposite := getFieldConstraint(fieldType)
+	columnConstraint, autoincr, isComposite := getFieldConstraint(d, fieldType)
 	if columnConstraint != "" {
 		columnConstraint = " " + columnConstraint
 	}
-	sqlType := getSQLType(fieldValue.Type(), autoincr)
+
+	sqlType := d.SQLType(fieldValue.Type(), autoincr)
 	if core.IsJSONField(fieldType) {
-		// SQLite stores JSON as TEXT
-		sqlType = "TEXT"
+		sqlType = d.JSONColumnType()
 	}
+
 	return fieldInfo{
 		Name:        fieldName,
-		Type:        removeDuplicateKeyword(sqlType + columnConstraint),
+		Type:        sqlType + columnConstraint,
 		IsComposite: isComposite,
 	}
-}
-
-func removeDuplicateKeyword(keyword string) string {
-	pk := "PRIMARY KEY"
-	count := strings.Count(keyword, pk)
-	if count > 1 {
-		idx := strings.Index(keyword, pk)
-		keyword = keyword[:idx+1] + strings.ReplaceAll(keyword[idx+1:], pk, "")
-	}
-	return keyword
 }
 
 func getFieldName(fieldType reflect.StructField) string {
 	return core.GetFieldName(fieldType)
 }
 
-func getFieldConstraint(fieldType reflect.StructField) (fc string, autoincr bool, isComposite bool) {
+// getFieldConstraint renders the column constraints declared by a db tag.
+//
+// Tokens are scanned twice because two of the decisions are order-independent:
+// autoincr can be requested either by the autoincr token or, on dialects that
+// say so, by pk alone; and whether PRIMARY KEY is emitted as its own constraint
+// depends on whether the resulting auto-increment column type already contains
+// it. SQLite's does, which previously produced the keyword twice and needed a
+// post-hoc string fixup to remove.
+func getFieldConstraint(d Dialect, fieldType reflect.StructField) (fc string, autoincr bool, isComposite bool) {
+	tokens := constraintTokens(fieldType)
+
+	var isPK bool
+	for _, tok := range tokens {
+		switch tok {
+		case "PK":
+			isPK = true
+		case "AUTOINCR":
+			autoincr = true
+		case "UQS":
+			isComposite = true
+		}
+	}
+	if isPK && d.AutoIncrOnPK() {
+		autoincr = true
+	}
+
 	constraints := []string{}
-	if dbTag := fieldType.Tag.Get("db"); dbTag != "" {
-		tagParts := strings.Split(dbTag, ",")
-		if len(tagParts) > 1 {
-			for _, part := range strings.Fields(tagParts[1]) {
-				switch strings.ToUpper(part) {
-				case "PK":
-					constraints = append(constraints, "PRIMARY KEY")
-				case "UQ":
-					constraints = append(constraints, "UNIQUE")
-				case "UQS":
-					isComposite = true
-				case "AUTOINCR":
-					autoincr = true
-				case "NOTNULL":
-					constraints = append(constraints, "NOT NULL")
-				case "REQ":
-					// handled at query generation time, no DDL effect
-				case "JSON":
-					// column type handled in getFieldInfo, no constraint
-				}
+	for _, tok := range tokens {
+		switch tok {
+		case "PK":
+			if autoincr && d.AutoIncrIncludesPK() {
+				continue
 			}
+			constraints = append(constraints, "PRIMARY KEY")
+		case "UQ":
+			constraints = append(constraints, "UNIQUE")
+		case "NOTNULL":
+			constraints = append(constraints, "NOT NULL")
+		case "UQS", "AUTOINCR":
+			// handled above, no DDL effect of their own
+		case "REQ":
+			// handled at query generation time, no DDL effect
+		case "JSON":
+			// column type handled in getFieldInfo, no constraint
 		}
 	}
 
 	return strings.Join(constraints, " "), autoincr, isComposite
 }
 
-// hasReqTag checks if a struct field has the "req" option in its db tag.
+// constraintTokens returns the upper-cased attribute tokens of a db tag.
+func constraintTokens(fieldType reflect.StructField) []string {
+	dbTag := fieldType.Tag.Get("db")
+	if dbTag == "" {
+		return nil
+	}
+
+	tagParts := strings.Split(dbTag, ",")
+	if len(tagParts) < 2 {
+		return nil
+	}
+
+	var tokens []string
+	for _, part := range strings.Fields(tagParts[1]) {
+		tokens = append(tokens, strings.ToUpper(part))
+	}
+	return tokens
+}
+
 func hasReqTag(field reflect.StructField) bool {
 	return core.HasReqTag(field)
 }
@@ -246,21 +275,75 @@ func getUniqueColumnGroups(t reflect.Type) [][]string {
 	return groups
 }
 
-func getExistingColumns(ctx context.Context, conn *sql.DB, tableName string) ([]string, error) {
+// tableExists reports whether tableName is present.
+//
+// The two dialects answer differently: Postgres selects EXISTS and always
+// returns a row, while SQLite selects the name from sqlite_master and returns
+// no rows when the table is absent.
+func tableExists(ctx context.Context, d Dialect, conn *sql.DB, tableName string) (bool, error) {
+	row := conn.QueryRowContext(ctx, d.TableExistsQuery(), tableName)
+
+	if d.Name() == DialectPostgres {
+		var exists bool
+		if err := row.Scan(&exists); err != nil {
+			return false, fmt.Errorf("checking if table %s exists: %w", tableName, err)
+		}
+		return exists, nil
+	}
+
+	var name string
+	switch err := row.Scan(&name); {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("checking if table %s exists: %w", tableName, err)
+	}
+	return true, nil
+}
+
+func createTableQuery(d Dialect, tableName string, fields []fieldInfo) string {
+	var columnDefs []string
+	var compositeKeyGroup []string
+	for _, field := range fields {
+		columnDefs = append(columnDefs, fmt.Sprintf("%s %s", field.Name, field.Type))
+		if field.IsComposite {
+			compositeKeyGroup = append(compositeKeyGroup, field.Name)
+		}
+	}
+
+	columnSQL := strings.Join(columnDefs, ", ")
+	if len(compositeKeyGroup) > 0 {
+		compositeKeySQL := fmt.Sprintf("UNIQUE(%s)", strings.Join(compositeKeyGroup, ", "))
+		columnSQL += ", " + compositeKeySQL
+	}
+
+	return fmt.Sprintf("%s %s (%s);", d.CreateTablePrefix(), quoteIdent(tableName), columnSQL)
+}
+
+func generateAddColumnQuery(tableName string, missingColumns []string) string {
+	alterQuery := fmt.Sprintf("ALTER TABLE \"%s\" ", tableName)
+	var addColumns []string
+	for _, col := range missingColumns {
+		addColumns = append(addColumns, fmt.Sprintf("ADD COLUMN %s", col))
+	}
+
+	alterQuery += strings.Join(addColumns, ", ")
+	return alterQuery
+}
+
+func getExistingColumns(ctx context.Context, d Dialect, conn *sql.DB, tableName string) ([]string, error) {
 	var columns []string
 
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf("pragma table_info('%v')", tableName))
+	rows, err := conn.QueryContext(ctx, d.ExistingColumnsQuery(), tableName)
 	if err != nil {
-		return nil, fmt.Errorf("error getting columns for table %s: %v", tableName, err)
+		return nil, fmt.Errorf("getting columns for table %s: %w", tableName, err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var x any
-		var column string
-		err = rows.Scan(&x, &column, &x, &x, &x, &x)
+		column, err := d.ScanColumnName(rows.Scan)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning column for table %s: %v", tableName, err)
+			return nil, fmt.Errorf("scanning column for table %s: %w", tableName, err)
 		}
 		columns = append(columns, column)
 	}
@@ -322,7 +405,7 @@ func getUniqueConstraints(ctx context.Context, conn *sql.DB, tableName string) (
 }
 
 func generateDropConstraintStatement(tableName string, uqConstraints [][]string) string {
-	sql := fmt.Sprintf("ALTER TABLE %s ", tableName)
+	sql := fmt.Sprintf("ALTER TABLE \"%s\" ", tableName)
 
 	var dropConstraints []string
 	for i := range uqConstraints {
@@ -339,7 +422,7 @@ func generateDropConstraintStatement(tableName string, uqConstraints [][]string)
 func generateAddConstraintStatement(tableName string,
 	uqGroups [][]string) string {
 
-	sql := fmt.Sprintf("ALTER TABLE %s ", tableName)
+	sql := fmt.Sprintf("ALTER TABLE \"%s\" ", tableName)
 
 	var addConstraints []string
 	for i, group := range uqGroups {
@@ -366,85 +449,6 @@ func contains(slice []string, val string) bool {
 	return false
 }
 
-func createTableQuery(tableName string, fields []fieldInfo) string {
-	var columnDefs []string
-	var compositeKeyGroup []string
-	for _, field := range fields {
-		columnDefs = append(columnDefs, fmt.Sprintf("%s %s", field.Name, field.Type))
-		if field.IsComposite {
-			compositeKeyGroup = append(compositeKeyGroup, field.Name)
-		}
-	}
-
-	columnSQL := strings.Join(columnDefs, ", ")
-	if len(compositeKeyGroup) > 0 {
-		compositeKeySQL := fmt.Sprintf("UNIQUE(%s)", strings.Join(compositeKeyGroup, ", "))
-		columnSQL += ", " + compositeKeySQL
-	}
-
-	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (%s);", tableName, columnSQL)
-}
-
-func getSQLType(fieldType reflect.Type, autoincr bool) string {
-	for fieldType.Kind() == reflect.Ptr {
-		fieldType = fieldType.Elem()
-	}
-	if autoincr {
-		switch fieldType.Kind() {
-		case reflect.Int, reflect.Int32, reflect.Int64, reflect.Uint64:
-			return "INTEGER PRIMARY KEY AUTOINCREMENT"
-		}
-	}
-
-	switch fieldType.Kind() {
-	case reflect.Int, reflect.Int32:
-		return "INTEGER"
-	case reflect.Int64, reflect.Uint64:
-		return "INTEGER"
-	case reflect.Float32, reflect.Float64:
-		return "REAL"
-	case reflect.Bool:
-		return "BOOLEAN"
-	case reflect.String:
-		return "TEXT"
-	case reflect.Slice:
-		if fieldType.Elem().Kind() == reflect.Uint8 {
-			return "BLOB"
-		}
-	case reflect.Struct:
-		if fieldType == reflect.TypeOf(time.Time{}) {
-			return "DATETIME"
-		}
-	}
-
-	return ""
-}
-
-func tableExists(ctx context.Context, conn *sql.DB, tableName string) (bool, error) {
-	tableQuery := "SELECT name FROM sqlite_master WHERE type='table' AND name=?;"
-	var name string
-	err := conn.QueryRowContext(ctx, tableQuery, tableName).Scan(&name)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
-		return false, fmt.Errorf("error checking if table exists: %v", err)
-	}
-
-	return true, nil
-}
-
-func generateAddColumnQuery(tableName string, missingColumns []string) string {
-	alterQuery := fmt.Sprintf("ALTER TABLE \"%s\" ", tableName)
-	var addColumns []string
-	for _, col := range missingColumns {
-		addColumns = append(addColumns, fmt.Sprintf("ADD COLUMN %s", col))
-	}
-
-	alterQuery += strings.Join(addColumns, ", ")
-	return alterQuery
-}
-
 // indexInfo holds parsed index metadata from struct tags.
 type indexInfo struct {
 	Name   string
@@ -453,7 +457,6 @@ type indexInfo struct {
 }
 
 // extractIndexes parses idx and uidx tags from a struct type.
-// Supports: db:"col,idx" (auto-named), db:"col,idx:my_index" (named/composite).
 func extractIndexes(table any) []indexInfo {
 	tableType := reflect.TypeOf(table)
 	if tableType.Kind() == reflect.Ptr {
@@ -543,21 +546,21 @@ func DropTable(ctx context.Context, conn *sql.DB, tableName string) error {
 	return err
 }
 
-func SyncTable(ctx context.Context, conn *sql.DB, table interface{}) error {
+func SyncTable(ctx context.Context, d Dialect, conn *sql.DB, table any) error {
 	tableName := GenerateTableName(table)
-	fields, err := getTableInfo(table)
+	fields, err := getTableInfo(d, table)
 	if err != nil {
 		return err
 	}
 
-	if exist, err := tableExists(ctx, conn, tableName); err != nil {
+	if exist, err := tableExists(ctx, d, conn, tableName); err != nil {
 		return err
 	} else if !exist {
-		if err = createTable(ctx, conn, tableName, fields); err != nil {
+		if err = createTable(ctx, d, conn, tableName, fields); err != nil {
 			return err
 		}
 	} else {
-		if err = addMissingColumns(ctx, conn, tableName, fields); err != nil {
+		if err = addMissingColumns(ctx, d, conn, tableName, fields); err != nil {
 			return err
 		}
 	}
@@ -570,4 +573,9 @@ func SyncTable(ctx context.Context, conn *sql.DB, table interface{}) error {
 	}
 
 	return nil
+}
+
+// ExecuteWriteQuery runs a statement that returns no rows.
+func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.DB) (sql.Result, error) {
+	return conn.ExecContext(ctx, query)
 }

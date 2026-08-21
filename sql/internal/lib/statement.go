@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +23,10 @@ func observeQuery(ctx context.Context, obs isql.Observer, query string, args []a
 	}
 }
 
+// Statement accumulates the pieces of one SQL statement. It is dialect-aware:
+// every placeholder it emits comes from the Dialect it was created with.
 type Statement struct {
+	dialect          Dialect
 	table            string
 	id               any
 	columns          []string
@@ -32,6 +37,7 @@ type Statement struct {
 	mustFilterColMap map[string]bool
 	where            string
 	args             []any
+	argCounter       int
 	showSQL          bool
 	pkColumn         string
 	orderBy          []string
@@ -51,10 +57,59 @@ type Statement struct {
 }
 
 // cteClause is a single named Common Table Expression (WITH name AS (sql)).
+//
+// Under numbered placeholders the args are merged into the statement at
+// registration time and args stays nil, because the body was renumbered to
+// match. Under positional placeholders they are held here and spliced ahead of
+// the main body args when the query is assembled.
 type cteClause struct {
 	name string
 	sql  string
 	args []any
+}
+
+// placeholderRe matches Postgres positional placeholders ($1, $2, ...).
+var placeholderRe = regexp.MustCompile(`\$(\d+)`)
+
+// NewStatement returns a statement that emits SQL for the given dialect.
+func NewStatement(d Dialect) Statement {
+	return Statement{dialect: d}
+}
+
+// Dialect returns the dialect this statement emits SQL for.
+func (stmt *Statement) Dialect() Dialect {
+	if stmt.dialect == nil {
+		return Postgres
+	}
+	return stmt.dialect
+}
+
+// nextPlaceholder consumes one bound-argument slot and returns its marker.
+func (stmt *Statement) nextPlaceholder() string {
+	stmt.argCounter++
+	return stmt.Dialect().Placeholder(stmt.argCounter)
+}
+
+// bindCond rewrites the leading n "?" markers in cond into the dialect's
+// placeholder form. Dialects whose placeholders are positional already use "?"
+// and get the condition back untouched.
+func (stmt *Statement) bindCond(cond string, n int) string {
+	if !stmt.Dialect().NumberedArgs() {
+		return cond
+	}
+	for i := 0; i < n; i++ {
+		cond = strings.Replace(cond, "?", stmt.nextPlaceholder(), 1)
+	}
+	return cond
+}
+
+// placeholders returns n markers, consuming a slot for each.
+func (stmt *Statement) placeholders(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = stmt.nextPlaceholder()
+	}
+	return out
 }
 
 // Preload registers an association name to be eager-loaded after the read.
@@ -75,12 +130,31 @@ func (stmt *Statement) Args() []any {
 }
 
 // With registers a named Common Table Expression whose body is the already
-// compiled subSQL with its subArgs. The CTE is emitted as a WITH prefix and,
-// because SQLite uses positional "?" placeholders, its args are spliced ahead
-// of the main body args at query-generation time.
+// compiled subSQL with its subArgs. Because Postgres placeholders reference args
+// by number, the sub's $1..$k are shifted by the current arg count and its args
+// are appended, keeping placeholder numbers aligned with arg positions.
 func (stmt *Statement) With(name, subSQL string, subArgs []any) *Statement {
-	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: subSQL, args: subArgs})
+	if !stmt.Dialect().NumberedArgs() {
+		stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: subSQL, args: subArgs})
+		return stmt
+	}
+
+	renumbered := renumberPlaceholders(subSQL, stmt.argCounter)
+	stmt.argCounter += len(subArgs)
+	stmt.args = append(stmt.args, subArgs...)
+	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: renumbered})
 	return stmt
+}
+
+// renumberPlaceholders shifts every $N placeholder in q up by offset.
+func renumberPlaceholders(q string, offset int) string {
+	if offset == 0 {
+		return q
+	}
+	return placeholderRe.ReplaceAllStringFunc(q, func(m string) string {
+		n, _ := strconv.Atoi(m[1:])
+		return "$" + strconv.Itoa(n+offset)
+	})
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -102,18 +176,17 @@ func (stmt *Statement) In(col string, values ...any) *Statement {
 		stmt.where += " AND "
 	}
 
-	placeholders := make([]string, len(values))
-	for i := range values {
-		placeholders[i] = "?"
-	}
+	placeholders := stmt.placeholders(len(values))
 	stmt.args = append(stmt.args, values...)
 	stmt.where += fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ", "))
 	return stmt
 }
 
 func (stmt *Statement) Where(cond string, args ...any) *Statement {
+	cond = stmt.bindCond(cond, len(args))
 	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
+		// Create a new slice to avoid sharing underlying array
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
 		stmt.args = append(stmt.args, newArgs...)
@@ -126,7 +199,7 @@ func (stmt *Statement) generateWhereClauseFromID() string {
 		return ""
 	}
 	stmt.args = append(stmt.args, stmt.id)
-	return "id = ?"
+	return "id = " + stmt.nextPlaceholder()
 }
 
 func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
@@ -146,7 +219,7 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 			continue
 		}
 
-		conditions = append(conditions, col+" = ?")
+		conditions = append(conditions, col+" = "+stmt.nextPlaceholder())
 		stmt.args = append(stmt.args, core.SQLArgValue(field, val.Field(idx)))
 	}
 
@@ -245,6 +318,7 @@ func (stmt *Statement) GroupBy(cols ...string) *Statement {
 
 // Having sets the HAVING clause for GROUP BY filtering.
 func (stmt *Statement) Having(cond string, args ...any) *Statement {
+	cond = stmt.bindCond(cond, len(args))
 	stmt.having = cond
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
@@ -256,6 +330,7 @@ func (stmt *Statement) Having(cond string, args ...any) *Statement {
 
 // Or adds an OR condition to the WHERE clause.
 func (stmt *Statement) Or(cond string, args ...any) *Statement {
+	cond = stmt.bindCond(cond, len(args))
 	if stmt.where != "" {
 		stmt.where += " OR " + cond
 	} else {
@@ -271,21 +346,23 @@ func (stmt *Statement) Or(cond string, args ...any) *Statement {
 
 // Like adds a LIKE condition to the WHERE clause.
 func (stmt *Statement) Like(col string, pattern string) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("%s LIKE ?", col))
+	stmt.where = stmt.AddWhereClause(col + " LIKE " + stmt.nextPlaceholder())
 	stmt.args = append(stmt.args, pattern)
 	return stmt
 }
 
 // NotLike adds a NOT LIKE condition to the WHERE clause.
 func (stmt *Statement) NotLike(col string, pattern string) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("%s NOT LIKE ?", col))
+	stmt.where = stmt.AddWhereClause(col + " NOT LIKE " + stmt.nextPlaceholder())
 	stmt.args = append(stmt.args, pattern)
 	return stmt
 }
 
 // Exists adds an EXISTS subquery condition to the WHERE clause.
 func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("EXISTS (%s)", subquery))
+	subquery = stmt.bindCond(subquery, len(args))
+	cond := fmt.Sprintf("EXISTS (%s)", subquery)
+	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
@@ -296,7 +373,9 @@ func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
 
 // NotExists adds a NOT EXISTS subquery condition to the WHERE clause.
 func (stmt *Statement) NotExists(subquery string, args ...any) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("NOT EXISTS (%s)", subquery))
+	subquery = stmt.bindCond(subquery, len(args))
+	cond := fmt.Sprintf("NOT EXISTS (%s)", subquery)
+	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
@@ -357,6 +436,7 @@ func (stmt *Statement) InnerJoin(table string, on string, args ...any) *Statemen
 }
 
 func (stmt *Statement) addJoin(joinType, table, on string, args ...any) *Statement {
+	on = stmt.bindCond(on, len(args))
 	stmt.joins = append(stmt.joins, fmt.Sprintf("%s \"%s\" ON %s", joinType, table, on))
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
@@ -399,25 +479,32 @@ func (stmt *Statement) GenerateRestoreQuery() string {
 	return fmt.Sprintf("UPDATE \"%s\" SET %s = NULL WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
 }
 
-// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix and splices
-// the CTE args ahead of the main body args, since SQLite placeholders are
-// positional and the CTE bodies appear first in the final SQL. Returns "" when
-// no CTEs are registered.
+// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix.
+//
+// Under numbered placeholders the CTE args were already merged into stmt.args
+// by With, so only the SQL text is assembled here. Under positional
+// placeholders they are spliced ahead of the main body args, because the CTE
+// bodies appear first in the final SQL. Returns "" when no CTEs are registered.
 func (stmt *Statement) buildCTEPrefix() string {
 	if len(stmt.ctes) == 0 {
 		return ""
 	}
+
 	parts := make([]string, len(stmt.ctes))
 	var cteArgs []any
 	for i, c := range stmt.ctes {
 		parts[i] = fmt.Sprintf("%s AS (%s)", c.name, c.sql)
 		cteArgs = append(cteArgs, c.args...)
 	}
-	stmt.args = append(cteArgs, stmt.args...)
+	if len(cteArgs) > 0 {
+		stmt.args = append(cteArgs, stmt.args...)
+	}
+
 	return "WITH " + strings.Join(parts, ", ") + " "
 }
 
 // GenerateReadQuery builds a SELECT query from the current statement state.
+
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string
 	if len(stmt.aggregates) > 0 {
@@ -596,10 +683,7 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 		stmt.table = core.GetTableName(doc)
 	}
 
-	placeholders := make([]string, len(cols))
-	for i := range placeholders {
-		placeholders[i] = "?"
-	}
+	placeholders := stmt.placeholders(len(cols))
 
 	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
 		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
@@ -693,7 +777,7 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		}
 		placeholders := make([]string, len(fieldIdxs))
 		for i, fi := range fieldIdxs {
-			placeholders[i] = "?"
+			placeholders[i] = stmt.nextPlaceholder()
 			stmt.args = append(stmt.args, core.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
 		}
 		rows = append(rows, "("+strings.Join(placeholders, ", ")+")")
@@ -783,6 +867,9 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
 		rvalue = rvalue.Elem()
 	}
+	// SET placeholders are numbered afresh from 1, so any existing WHERE
+	// placeholders have to shift up by however many SET columns there are.
+	freshCounter := 0
 	for idx := 0; idx < rvalue.NumField(); idx++ {
 		field := rvalue.Type().Field(idx)
 		if core.IsRelationField(field) || core.IsIgnoredField(field) {
@@ -794,7 +881,8 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 			continue
 		}
 
-		setCols = append(setCols, col+" = ?")
+		freshCounter++
+		setCols = append(setCols, col+" = "+stmt.Dialect().Placeholder(freshCounter))
 		setArgs = append(setArgs, core.SQLArgValue(field, rvalue.Field(idx)))
 	}
 
@@ -802,7 +890,16 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 		stmt.table = core.GetTableName(doc)
 	}
 
-	// SET args go before WHERE args in the driver call
+	if stmt.Dialect().NumberedArgs() {
+		re := regexp.MustCompile(`\$(\d+)\b`)
+		stmt.where = re.ReplaceAllStringFunc(stmt.where, func(m string) string {
+			n, _ := strconv.Atoi(m[1:])
+			return fmt.Sprintf("$%d", n+freshCounter)
+		})
+		stmt.argCounter = freshCounter + stmt.argCounter
+	}
+
+	// SET args before WHERE args so SQL argument order matches
 	stmt.args = append(setArgs, stmt.args...)
 
 	return fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s",
