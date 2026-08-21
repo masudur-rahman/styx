@@ -16,6 +16,8 @@ var rawMessageType = reflect.TypeOf(json.RawMessage{})
 
 var timeType = reflect.TypeOf(time.Time{})
 
+var scannerType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
+
 var (
 	fieldMapCache  sync.Map // map[reflect.Type]map[string]int (index of field)
 	tableNameCache sync.Map // map[reflect.Type]string
@@ -358,6 +360,64 @@ func ScanRow(rows *sql.Rows, doc any) error {
 	return nil
 }
 
+// scanIntoField hydrates a field whose type implements sql.Scanner, allocating
+// first when the field is a pointer. It reports whether it handled the field so
+// callers can fall through to the ordinary conversion rules.
+//
+// Without this, a Scanner field is left at its zero value with no error
+// reported, because the driver's raw value is neither assignable nor
+// convertible to it: lib/pq returns a string for a uuid column, and uuid.UUID
+// is [16]byte.
+func scanIntoField(field reflect.Value, sf reflect.StructField, rawVal any) (bool, error) {
+	var target reflect.Value
+	switch {
+	case field.Addr().Type().Implements(scannerType):
+		target = field.Addr()
+	case field.Kind() == reflect.Ptr && field.Type().Implements(scannerType):
+		target = reflect.New(field.Type().Elem())
+	default:
+		return false, nil
+	}
+
+	if err := target.Interface().(sql.Scanner).Scan(rawVal); err != nil {
+		return true, fmt.Errorf("scanning into field %s: %w", sf.Name, err)
+	}
+
+	if field.Kind() == reflect.Ptr {
+		field.Set(target)
+	}
+	return true, nil
+}
+
+// setPointerField allocates and assigns into a pointer field, mirroring the
+// assignable/convertible/time.Time rules used for non-pointer fields. Values it
+// cannot map are left as a nil pointer.
+func setPointerField(field, v reflect.Value, rawVal any) {
+	elemType := field.Type().Elem()
+	newVal := reflect.New(elemType)
+
+	switch {
+	case v.Type().AssignableTo(elemType):
+		newVal.Elem().Set(v)
+	case v.Type().ConvertibleTo(elemType):
+		newVal.Elem().Set(v.Convert(elemType))
+	case elemType == timeType:
+		s, ok := rawVal.(string)
+		if !ok {
+			return
+		}
+		t, err := parseTime(s)
+		if err != nil {
+			return
+		}
+		newVal.Elem().Set(reflect.ValueOf(t))
+	default:
+		return
+	}
+
+	field.Set(newVal)
+}
+
 // setFieldValue assigns a scanned raw DB value onto a struct field, handling
 // JSON columns, pointers, time.Time, bool coercion, and convertible types.
 func setFieldValue(field reflect.Value, sf reflect.StructField, rawVal any) error {
@@ -369,30 +429,16 @@ func setFieldValue(field reflect.Value, sf reflect.StructField, rawVal any) erro
 		return setJSONField(field, rawVal)
 	}
 
+	if handled, err := scanIntoField(field, sf, rawVal); handled {
+		return err
+	}
+
 	v := reflect.ValueOf(rawVal)
 	switch {
 	case v.Type().AssignableTo(field.Type()):
 		field.Set(v)
 	case field.Kind() == reflect.Ptr:
-		elemType := field.Type().Elem()
-		switch {
-		case v.Type().AssignableTo(elemType):
-			newVal := reflect.New(elemType)
-			newVal.Elem().Set(v)
-			field.Set(newVal)
-		case v.Type().ConvertibleTo(elemType):
-			newVal := reflect.New(elemType)
-			newVal.Elem().Set(v.Convert(elemType))
-			field.Set(newVal)
-		case elemType == timeType:
-			if s, ok := rawVal.(string); ok {
-				if t, err := parseTime(s); err == nil {
-					newVal := reflect.New(elemType)
-					newVal.Elem().Set(reflect.ValueOf(t))
-					field.Set(newVal)
-				}
-			}
-		}
+		setPointerField(field, v, rawVal)
 	case field.Type() == timeType:
 		if s, ok := rawVal.(string); ok {
 			if t, err := parseTime(s); err == nil {
