@@ -148,3 +148,21 @@ at
 ## time_pk/indexes
 []
 
+## typed_columns/create
+CREATE TABLE "typed_columns" (id VARCHAR(255) PRIMARY KEY, owner_id UUID, price numeric(10,2), nickname VARCHAR(255), created_at TIMESTAMP WITH TIME ZONE, expires_at date);
+
+## typed_columns/add-columns
+ALTER TABLE "typed_columns" ADD COLUMN id VARCHAR(255) PRIMARY KEY, ADD COLUMN owner_id UUID, ADD COLUMN price numeric(10,2), ADD COLUMN nickname VARCHAR(255), ADD COLUMN created_at TIMESTAMP WITH TIME ZONE, ADD COLUMN expires_at date
+
+## typed_columns/pk
+id
+
+## typed_columns/soft-delete
+""
+
+## typed_columns/unique-groups
+[]
+
+## typed_columns/indexes
+[]
+

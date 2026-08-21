@@ -27,6 +27,11 @@ const (
 	TokenForeignKey = "FK"
 	TokenReferences = "REF"
 	TokenJoinTable  = "JOIN"
+
+	// TokenType names an explicit column type, e.g. `type=uuid`. It takes its
+	// argument after "=" rather than ":", so a value may itself contain a
+	// colon without being read as a name.
+	TokenType = "TYPE"
 )
 
 // knownTokens is the set of bare attribute tokens.
@@ -55,6 +60,11 @@ var knownPrefixes = map[string]bool{
 	TokenJoinTable:  true,
 }
 
+// knownAssignments is the set of tokens taking a "token=value" argument.
+var knownAssignments = map[string]bool{
+	TokenType: true,
+}
+
 // DBTag is the parsed form of a `db:"..."` struct tag.
 //
 // The grammar is one comma separating the column name from its attributes,
@@ -62,9 +72,14 @@ var knownPrefixes = map[string]bool{
 //
 //	db:"email,uq notnull"
 //
-// A second comma is an error rather than a silent truncation: the attributes
-// past it used to be dropped without a word, so db:"id,pk,uq" produced a
-// column with no unique constraint and no complaint.
+// Only the first comma is structural, so an attribute value may contain one:
+//
+//	db:"price,type=numeric(10,2)"
+//
+// A stray comma between attributes is therefore not a section separator but
+// part of a token, and fails validation as an unknown option. It used to be
+// dropped without a word, so db:"id,pk,uq" produced a column with no unique
+// constraint and no complaint.
 type DBTag struct {
 	// Name is the explicit column name, empty when the tag only sets attributes.
 	Name string
@@ -74,6 +89,10 @@ type DBTag struct {
 
 	// Ignore reports the db:"-" form, meaning the field is not a column.
 	Ignore bool
+
+	// rawValues holds each token's original text, parallel to Tokens. Only
+	// assignment values need it, since a SQL type is case-sensitive.
+	rawValues []string
 }
 
 // Has reports whether the tag carries a bare token.
@@ -87,12 +106,25 @@ func (t DBTag) Has(token string) bool {
 }
 
 // Arg returns the argument of the first "prefix:value" token with the given
-// prefix, e.g. Arg("IDX") returns "by_email" for `idx:by_email`.
+// prefix, e.g. Arg("IDX") returns "BY_EMAIL" for `idx:by_email`.
 func (t DBTag) Arg(prefix string) (string, bool) {
 	want := prefix + ":"
 	for _, tok := range t.Tokens {
 		if strings.HasPrefix(tok, want) {
 			return strings.TrimPrefix(tok, want), true
+		}
+	}
+	return "", false
+}
+
+// Assignment returns the value of the first "token=value" token, preserving
+// the value's original case: SQL types such as numeric(10,2) are passed
+// through verbatim when they are not a registered portable name.
+func (t DBTag) Assignment(token string) (string, bool) {
+	want := token + "="
+	for i, tok := range t.Tokens {
+		if strings.HasPrefix(tok, want) {
+			return t.rawValues[i], true
 		}
 	}
 	return "", false
@@ -109,14 +141,7 @@ func ParseDBTag(field reflect.StructField) (DBTag, error) {
 		return DBTag{Ignore: true}, nil
 	}
 
-	parts := strings.Split(dbTag, ",")
-	if len(parts) > 2 {
-		return DBTag{}, fmt.Errorf(
-			"field %s: db tag %q has %d comma-separated sections, expected at most 2 "+
-				"(the column name, then space-separated attributes such as %q)",
-			field.Name, dbTag, len(parts), "id,pk uq")
-	}
-
+	parts := strings.SplitN(dbTag, ",", 2)
 	tag := DBTag{Name: parts[0]}
 	if len(parts) == 1 {
 		return tag, nil
@@ -129,7 +154,13 @@ func ParseDBTag(field reflect.StructField) (DBTag, error) {
 			errs = append(errs, err)
 			continue
 		}
+
+		raw := part
+		if _, value, found := strings.Cut(part, "="); found {
+			raw = value
+		}
 		tag.Tokens = append(tag.Tokens, token)
+		tag.rawValues = append(tag.rawValues, raw)
 	}
 
 	return tag, errors.Join(errs...)
@@ -142,6 +173,17 @@ func validateToken(field reflect.StructField, dbTag, token string) error {
 		return nil
 	}
 
+	if name, value, found := strings.Cut(token, "="); found {
+		if !knownAssignments[name] {
+			return fmt.Errorf("field %s: db tag %q has unknown option %q", field.Name, dbTag, token)
+		}
+		if value == "" {
+			return fmt.Errorf("field %s: db tag %q option %q needs a value after the equals sign",
+				field.Name, dbTag, token)
+		}
+		return nil
+	}
+
 	if prefix, arg, found := strings.Cut(token, ":"); found {
 		if !knownPrefixes[prefix] {
 			return fmt.Errorf("field %s: db tag %q has unknown option %q", field.Name, dbTag, token)
@@ -151,6 +193,13 @@ func validateToken(field reflect.StructField, dbTag, token string) error {
 				field.Name, dbTag, token)
 		}
 		return nil
+	}
+
+	if strings.Contains(token, ",") {
+		return fmt.Errorf(
+			"field %s: db tag %q has unknown option %q: attributes are separated by spaces, "+
+				"not commas (for example %q)",
+			field.Name, dbTag, token, "id,pk uq")
 	}
 
 	return fmt.Errorf("field %s: db tag %q has unknown option %q", field.Name, dbTag, token)

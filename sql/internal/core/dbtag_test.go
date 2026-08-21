@@ -37,6 +37,10 @@ func TestParseDBTag_valid(t *testing.T) {
 		{name: "named unique index", tag: "region,uidx:by_region", wantName: "region", wantTokens: []string{"UIDX:BY_REGION"}},
 		{name: "ignored field", tag: "-", wantIgnore: true},
 		{name: "extra whitespace is collapsed", tag: "id,  pk   uq  ", wantName: "id", wantTokens: []string{"PK", "UQ"}},
+		{
+			name: "assignment value may contain a comma", tag: "price,type=numeric(10,2)",
+			wantName: "price", wantTokens: []string{"TYPE=NUMERIC(10,2)"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -65,11 +69,11 @@ func TestParseDBTag_invalid(t *testing.T) {
 	}{
 		{
 			name: "comma separated attributes", tag: "id,pk,uq",
-			wantErr: "3 comma-separated sections",
+			wantErr: "separated by spaces",
 		},
 		{
 			name: "comma before an index token", tag: "id,pk,idx",
-			wantErr: "3 comma-separated sections",
+			wantErr: `unknown option "PK,IDX"`,
 		},
 		{name: "unknown token", tag: "id,pkk", wantErr: `unknown option "PKK"`},
 		{name: "unknown prefixed token", tag: "id,zdx:name", wantErr: `unknown option "ZDX:NAME"`},

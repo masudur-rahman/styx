@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/masudur-rahman/styx/v2/types"
 )
 
 // Scalars exercises every reflect.Kind that getSQLType recognises, in both
@@ -96,6 +98,17 @@ type TimePK struct {
 	Name string    `db:"name"`
 }
 
+// TypedColumns exercises column-type resolution: the registry, the type= tag,
+// and a raw SQL type passed through verbatim.
+type TypedColumns struct {
+	ID       types.UUID `db:"id,pk"`
+	OwnerID  string     `db:"owner_id,type=uuid"`
+	Price    string     `db:"price,type=numeric(10,2)"`
+	Nickname string     `db:"nickname"`
+	Created  time.Time  `db:"created_at"`
+	Expires  time.Time  `db:"expires_at,type=date"`
+}
+
 // Tables is the full DDL corpus, in a fixed order so goldens stay stable.
 func Tables() []struct {
 	Name  string
@@ -113,6 +126,7 @@ func Tables() []struct {
 		{"json_doc", JSONDoc{}},
 		{"string_pk", StringPK{}},
 		{"time_pk", TimePK{}},
+		{"typed_columns", TypedColumns{}},
 	}
 }
 

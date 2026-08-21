@@ -148,3 +148,21 @@ at
 ## time_pk/indexes
 []
 
+## typed_columns/create
+CREATE TABLE IF NOT EXISTS "typed_columns" (id TEXT PRIMARY KEY, owner_id TEXT, price numeric(10,2), nickname TEXT, created_at DATETIME, expires_at date);
+
+## typed_columns/add-columns
+ALTER TABLE "typed_columns" ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN owner_id TEXT, ADD COLUMN price numeric(10,2), ADD COLUMN nickname TEXT, ADD COLUMN created_at DATETIME, ADD COLUMN expires_at date
+
+## typed_columns/pk
+id
+
+## typed_columns/soft-delete
+""
+
+## typed_columns/unique-groups
+[]
+
+## typed_columns/indexes
+[]
+

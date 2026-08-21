@@ -93,16 +93,46 @@ func getFieldInfo(d Dialect, fieldType reflect.StructField, fieldValue reflect.V
 		columnConstraint = " " + columnConstraint
 	}
 
-	sqlType := d.SQLType(fieldValue.Type(), autoincr)
-	if core.IsJSONField(fieldType) {
-		sqlType = d.JSONColumnType()
-	}
-
 	return fieldInfo{
 		Name:        fieldName,
-		Type:        sqlType + columnConstraint,
+		Type:        columnType(d, fieldType, fieldValue.Type(), autoincr) + columnConstraint,
 		IsComposite: isComposite,
 	}
+}
+
+// columnType resolves a field's column type, most explicit source first:
+//
+//  1. a type= tag, which names the column type outright
+//  2. the registry, covering styx.UUID, google/uuid.UUID, time.Time and
+//     anything a caller registered, plus types implementing core.SQLTyper
+//  3. the json tag, which forces the dialect's JSON column type
+//  4. the dialect's Go-kind switch
+//
+// An auto-incrementing column skips 1 to 3: the dialect's auto-increment type
+// is a complete column definition on SQLite, and overriding it would produce a
+// column that does not auto-increment.
+func columnType(d Dialect, field reflect.StructField, fieldType reflect.Type, autoincr bool) string {
+	if autoincr {
+		if col := d.SQLType(fieldType, true); col != "" {
+			return col
+		}
+	}
+
+	if tag, err := core.ParseDBTag(field); err == nil {
+		if named, ok := tag.Assignment(core.TokenType); ok {
+			return core.LookupNamedSQLType(named, d.Name())
+		}
+	}
+
+	if col, ok := core.LookupSQLType(fieldType, d.Name()); ok {
+		return col
+	}
+
+	if core.IsJSONField(field) {
+		return d.JSONColumnType()
+	}
+
+	return d.SQLType(fieldType, false)
 }
 
 func getFieldName(fieldType reflect.StructField) string {

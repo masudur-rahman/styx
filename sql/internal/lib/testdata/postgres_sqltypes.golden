@@ -1,45 +1,63 @@
 ## Int
-plain="INTEGER" autoincr="SERIAL"
+plain="INTEGER" autoincr="SERIAL" resolved="INTEGER"
 
 ## Int32
-plain="INTEGER" autoincr="SERIAL"
+plain="INTEGER" autoincr="SERIAL" resolved="INTEGER"
 
 ## Int64
-plain="BIGINT" autoincr="BIGSERIAL"
+plain="BIGINT" autoincr="BIGSERIAL" resolved="BIGINT"
 
 ## Uint64
-plain="BIGINT" autoincr="BIGSERIAL"
+plain="BIGINT" autoincr="BIGSERIAL" resolved="BIGINT"
 
 ## Float32
-plain="FLOAT" autoincr="FLOAT"
+plain="FLOAT" autoincr="FLOAT" resolved="FLOAT"
 
 ## Float64
-plain="FLOAT" autoincr="FLOAT"
+plain="FLOAT" autoincr="FLOAT" resolved="FLOAT"
 
 ## Bool
-plain="BOOLEAN" autoincr="BOOLEAN"
+plain="BOOLEAN" autoincr="BOOLEAN" resolved="BOOLEAN"
 
 ## String
-plain="VARCHAR(255)" autoincr="VARCHAR(255)"
+plain="VARCHAR(255)" autoincr="VARCHAR(255)" resolved="VARCHAR(255)"
 
 ## Bytes
-plain="BYTEA" autoincr="BYTEA"
+plain="BYTEA" autoincr="BYTEA" resolved="BYTEA"
 
 ## Time
-plain="TIMESTAMP WITH TIME ZONE" autoincr="TIMESTAMP WITH TIME ZONE"
+plain="TIMESTAMP WITH TIME ZONE" autoincr="TIMESTAMP WITH TIME ZONE" resolved="TIMESTAMP WITH TIME ZONE"
 
 ## IntPtr
-plain="INTEGER" autoincr="SERIAL"
+plain="INTEGER" autoincr="SERIAL" resolved="INTEGER"
 
 ## Int64Ptr
-plain="BIGINT" autoincr="BIGSERIAL"
+plain="BIGINT" autoincr="BIGSERIAL" resolved="BIGINT"
 
 ## StringPtr
-plain="VARCHAR(255)" autoincr="VARCHAR(255)"
+plain="VARCHAR(255)" autoincr="VARCHAR(255)" resolved="VARCHAR(255)"
 
 ## BoolPtr
-plain="BOOLEAN" autoincr="BOOLEAN"
+plain="BOOLEAN" autoincr="BOOLEAN" resolved="BOOLEAN"
 
 ## TimePtr
-plain="TIMESTAMP WITH TIME ZONE" autoincr="TIMESTAMP WITH TIME ZONE"
+plain="TIMESTAMP WITH TIME ZONE" autoincr="TIMESTAMP WITH TIME ZONE" resolved="TIMESTAMP WITH TIME ZONE"
+
+## typed/ID
+resolved="UUID"
+
+## typed/OwnerID
+resolved="UUID"
+
+## typed/Price
+resolved="numeric(10,2)"
+
+## typed/Nickname
+resolved="VARCHAR(255)"
+
+## typed/Created
+resolved="TIMESTAMP WITH TIME ZONE"
+
+## typed/Expires
+resolved="date"
 

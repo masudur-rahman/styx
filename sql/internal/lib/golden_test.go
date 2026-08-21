@@ -73,8 +73,16 @@ func goldenSQLTypes(t *testing.T, d Dialect) {
 	st := reflect.TypeOf(sqltest.Scalars{})
 	for i := 0; i < st.NumField(); i++ {
 		f := st.Field(i)
-		out.Addf(f.Name, "plain=%q autoincr=%q",
-			d.SQLType(f.Type, false), d.SQLType(f.Type, true))
+		out.Addf(f.Name, "plain=%q autoincr=%q resolved=%q",
+			d.SQLType(f.Type, false), d.SQLType(f.Type, true),
+			columnType(d, f, f.Type, false))
+	}
+
+	// The resolution chain: registry, type= tag, and raw pass-through.
+	tc := reflect.TypeOf(sqltest.TypedColumns{})
+	for i := 0; i < tc.NumField(); i++ {
+		f := tc.Field(i)
+		out.Addf("typed/"+f.Name, "resolved=%q", columnType(d, f, f.Type, false))
 	}
 
 	require.NoError(t, sqltest.Compare(d.Name()+"_sqltypes", out.String(), *update))
@@ -235,7 +243,7 @@ func TestGetTableInfo_rejectsBadTags(t *testing.T) {
 			table: struct {
 				ID string `db:"id,pk,uq"`
 			}{},
-			wantErr: []string{"field ID", "3 comma-separated sections"},
+			wantErr: []string{"field ID", "separated by spaces"},
 		},
 		{
 			name: "unknown token",
