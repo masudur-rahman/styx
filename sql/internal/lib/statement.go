@@ -211,16 +211,16 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 		val = val.Elem()
 	}
 
-	for idx := 0; idx < val.NumField(); idx++ {
-		field := val.Type().Field(idx)
-		col := core.GetFieldName(field)
+	for _, f := range core.WalkFields(val.Type()) {
+		col := core.GetFieldName(f.StructField)
+		fv := f.Value(val)
 
-		if !(stmt.allCols || stmt.mustFilterColMap[col] || core.HasReqTag(field) || !val.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || core.HasReqTag(f.StructField) || !fv.IsZero()) {
 			continue
 		}
 
 		conditions = append(conditions, col+" = "+stmt.nextPlaceholder())
-		stmt.args = append(stmt.args, core.SQLArgValue(field, val.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(f.StructField, fv))
 	}
 
 	return strings.Join(conditions, " AND ")
@@ -664,19 +664,16 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 		rvalue = rvalue.Elem()
 	}
 	var cols []string
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if core.IsRelationField(field) || core.IsIgnoredField(field) {
-			continue
-		}
-		col := core.GetFieldName(field)
+	for _, f := range core.WalkFields(rvalue.Type()) {
+		col := core.GetFieldName(f.StructField)
+		fv := f.Value(rvalue)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(f.StructField) || !fv.IsZero()) {
 			continue
 		}
 
 		cols = append(cols, col)
-		stmt.args = append(stmt.args, core.SQLArgValue(field, rvalue.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(f.StructField, fv))
 	}
 
 	if stmt.table == "" {
@@ -734,35 +731,32 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		first = first.Elem()
 	}
 
-	include := make([]bool, first.NumField())
+	walked := core.WalkFields(first.Type())
+	include := make([]bool, len(walked))
 	for _, doc := range docs {
 		rv := reflect.ValueOf(doc)
 		if rv.Kind() == reflect.Pointer {
 			rv = rv.Elem()
 		}
-		for idx := 0; idx < rv.NumField(); idx++ {
+		for idx, f := range walked {
 			if include[idx] {
 				continue
 			}
-			field := rv.Type().Field(idx)
-			if core.IsRelationField(field) || core.IsIgnoredField(field) {
-				continue
-			}
-			col := core.GetFieldName(field)
-			if stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rv.Field(idx).IsZero() {
+			col := core.GetFieldName(f.StructField)
+			if stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(f.StructField) || !f.Value(rv).IsZero() {
 				include[idx] = true
 			}
 		}
 	}
 
 	var cols []string
-	var fieldIdxs []int
-	for idx := 0; idx < first.NumField(); idx++ {
+	var included []core.FieldRef
+	for idx := range walked {
 		if !include[idx] {
 			continue
 		}
-		cols = append(cols, core.GetFieldName(first.Type().Field(idx)))
-		fieldIdxs = append(fieldIdxs, idx)
+		cols = append(cols, core.GetFieldName(walked[idx].StructField))
+		included = append(included, walked[idx])
 	}
 
 	if stmt.table == "" {
@@ -775,10 +769,10 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		if rv.Kind() == reflect.Pointer {
 			rv = rv.Elem()
 		}
-		placeholders := make([]string, len(fieldIdxs))
-		for i, fi := range fieldIdxs {
+		placeholders := make([]string, len(included))
+		for i, f := range included {
 			placeholders[i] = stmt.nextPlaceholder()
-			stmt.args = append(stmt.args, core.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
+			stmt.args = append(stmt.args, core.SQLArgValue(f.StructField, f.Value(rv)))
 		}
 		rows = append(rows, "("+strings.Join(placeholders, ", ")+")")
 	}
@@ -870,20 +864,17 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 	// SET placeholders are numbered afresh from 1, so any existing WHERE
 	// placeholders have to shift up by however many SET columns there are.
 	freshCounter := 0
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if core.IsRelationField(field) || core.IsIgnoredField(field) {
-			continue
-		}
-		col := core.GetFieldName(field)
+	for _, f := range core.WalkFields(rvalue.Type()) {
+		col := core.GetFieldName(f.StructField)
+		fv := f.Value(rvalue)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(f.StructField) || !fv.IsZero()) {
 			continue
 		}
 
 		freshCounter++
 		setCols = append(setCols, col+" = "+stmt.Dialect().Placeholder(freshCounter))
-		setArgs = append(setArgs, core.SQLArgValue(field, rvalue.Field(idx)))
+		setArgs = append(setArgs, core.SQLArgValue(f.StructField, fv))
 	}
 
 	if stmt.table == "" {

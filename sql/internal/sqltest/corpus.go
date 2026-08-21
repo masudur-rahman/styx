@@ -109,6 +109,38 @@ type TypedColumns struct {
 	Expires  time.Time  `db:"expires_at,type=date"`
 }
 
+// Auditable is the columns every table repeats, to be embedded rather than
+// copied.
+type Auditable struct {
+	CreatedAt time.Time  `json:"createdAt"`
+	CreatedBy string     `json:"createdBy"`
+	UpdatedAt *time.Time `json:"updatedAt"`
+	UpdatedBy string     `json:"updatedBy"`
+	DeletedAt *time.Time `json:"deletedAt" db:"deleted_at,archive"`
+}
+
+// Identifiable is an embedded primary key, to check that pk is found through
+// an embed.
+type Identifiable struct {
+	ID types.UUID `db:"id,pk"`
+}
+
+// Embedded exercises flattening: two embedded structs whose fields become
+// columns of this table.
+type Embedded struct {
+	Identifiable
+	Name string `db:"name,notnull"`
+	Auditable
+}
+
+// ShadowedEmbed exercises Go's shadowing rule: the outer CreatedBy hides the
+// embedded one.
+type ShadowedEmbed struct {
+	ID        string `db:"id,pk"`
+	CreatedBy string `db:"created_by,notnull"`
+	Auditable
+}
+
 // Tables is the full DDL corpus, in a fixed order so goldens stay stable.
 func Tables() []struct {
 	Name  string
@@ -127,6 +159,8 @@ func Tables() []struct {
 		{"string_pk", StringPK{}},
 		{"time_pk", TimePK{}},
 		{"typed_columns", TypedColumns{}},
+		{"embedded", Embedded{}},
+		{"shadowed_embed", ShadowedEmbed{}},
 	}
 }
 

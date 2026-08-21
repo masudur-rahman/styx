@@ -166,3 +166,39 @@ id
 ## typed_columns/indexes
 []
 
+## embedded/create
+CREATE TABLE IF NOT EXISTS "embedded" (name TEXT NOT NULL, id TEXT PRIMARY KEY, created_at DATETIME, created_by TEXT, updated_at DATETIME, updated_by TEXT, deleted_at DATETIME);
+
+## embedded/add-columns
+ALTER TABLE "embedded" ADD COLUMN name TEXT NOT NULL, ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN created_at DATETIME, ADD COLUMN created_by TEXT, ADD COLUMN updated_at DATETIME, ADD COLUMN updated_by TEXT, ADD COLUMN deleted_at DATETIME
+
+## embedded/pk
+id
+
+## embedded/soft-delete
+"deleted_at"
+
+## embedded/unique-groups
+[]
+
+## embedded/indexes
+[]
+
+## shadowed_embed/create
+CREATE TABLE IF NOT EXISTS "shadowed_embed" (id TEXT PRIMARY KEY, created_by TEXT NOT NULL, created_at DATETIME, updated_at DATETIME, updated_by TEXT, deleted_at DATETIME);
+
+## shadowed_embed/add-columns
+ALTER TABLE "shadowed_embed" ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN created_by TEXT NOT NULL, ADD COLUMN created_at DATETIME, ADD COLUMN updated_at DATETIME, ADD COLUMN updated_by TEXT, ADD COLUMN deleted_at DATETIME
+
+## shadowed_embed/pk
+id
+
+## shadowed_embed/soft-delete
+"deleted_at"
+
+## shadowed_embed/unique-groups
+[]
+
+## shadowed_embed/indexes
+[]
+

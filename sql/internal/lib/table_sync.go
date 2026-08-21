@@ -36,24 +36,15 @@ func getTableInfo(d Dialect, table interface{}) ([]fieldInfo, error) {
 
 	var fields []fieldInfo
 	var tagErrs []error
-	for i := 0; i < tableType.NumField(); i++ {
-		fieldType := tableType.Field(i)
-		fieldValue := tableValue.Field(i)
-		if !fieldType.IsExported() {
-			continue
-		}
-		if core.IsRelationField(fieldType) || core.IsIgnoredField(fieldType) {
-			continue
-		}
-
+	for _, f := range core.WalkFields(tableType) {
 		// Every bad tag on the struct is reported at once, so one run tells
 		// the caller about all of them rather than the first.
-		if _, err := core.ParseDBTag(fieldType); err != nil {
+		if _, err := core.ParseDBTag(f.StructField); err != nil {
 			tagErrs = append(tagErrs, err)
 			continue
 		}
 
-		fields = append(fields, getFieldInfo(d, fieldType, fieldValue))
+		fields = append(fields, getFieldInfo(d, f.StructField, f.Value(tableValue)))
 	}
 
 	if len(tagErrs) > 0 {
@@ -108,12 +99,18 @@ func getFieldInfo(d Dialect, fieldType reflect.StructField, fieldValue reflect.V
 //  3. the json tag, which forces the dialect's JSON column type
 //  4. the dialect's Go-kind switch
 //
-// An auto-incrementing column skips 1 to 3: the dialect's auto-increment type
-// is a complete column definition on SQLite, and overriding it would produce a
-// column that does not auto-increment.
+// A genuinely auto-incrementing column skips 1 to 3: the dialect's
+// auto-increment type is a complete column definition on SQLite, and
+// overriding it would produce a column that does not auto-increment.
+//
+// "Genuinely" matters because pk implies autoincr on Postgres regardless of
+// the field's type, and SQLType falls through to its ordinary mapping for a
+// kind that has no auto-incrementing form. Comparing the two answers is what
+// distinguishes a real SERIAL from a plain column that merely asked for one:
+// without it, a styx.UUID primary key resolved to VARCHAR(255).
 func columnType(d Dialect, field reflect.StructField, fieldType reflect.Type, autoincr bool) string {
 	if autoincr {
-		if col := d.SQLType(fieldType, true); col != "" {
+		if col := d.SQLType(fieldType, true); col != "" && col != d.SQLType(fieldType, false) {
 			return col
 		}
 	}
@@ -214,10 +211,9 @@ func ExtractSoftDeleteColumn(table any) string {
 // different runs.
 func getUniqueColumnGroups(t reflect.Type) [][]string {
 	groups := [][]string{}
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if core.HasDBToken(field, core.TokenUniqueS) {
-			groups = append(groups, []string{getFieldName(field)})
+	for _, f := range core.WalkFields(t) {
+		if core.HasDBToken(f.StructField, core.TokenUniqueS) {
+			groups = append(groups, []string{getFieldName(f.StructField)})
 		}
 	}
 
@@ -422,13 +418,12 @@ func extractIndexes(table any) []indexInfo {
 	var namedOrder []string
 	var unnamed []indexInfo
 
-	for i := 0; i < tableType.NumField(); i++ {
-		field := tableType.Field(i)
-		tag, _ := core.ParseDBTag(field)
+	for _, f := range core.WalkFields(tableType) {
+		tag, _ := core.ParseDBTag(f.StructField)
 		if len(tag.Tokens) == 0 {
 			continue
 		}
-		colName := core.GetFieldName(field)
+		colName := core.GetFieldName(f.StructField)
 
 		for _, tok := range tag.Tokens {
 			prefix, idxName, isNamed := strings.Cut(tok, ":")

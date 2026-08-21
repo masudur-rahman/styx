@@ -57,28 +57,21 @@ func GetTableName(table interface{}) string {
 	return tableName
 }
 
-// GetDBFieldMap returns a map of database column names to field indices for a struct, with caching.
-func GetDBFieldMap(doc any) map[string]int {
+// GetDBFieldMap maps each column name to the field that backs it, with caching.
+// Columns promoted out of an embedded struct carry a multi-element index path.
+func GetDBFieldMap(doc any) map[string]FieldRef {
 	t := reflect.TypeOf(doc)
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
 
 	if cache, ok := fieldMapCache.Load(t); ok {
-		return cache.(map[string]int)
+		return cache.(map[string]FieldRef)
 	}
 
-	fieldMap := make(map[string]int)
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if !field.IsExported() {
-			continue
-		}
-		if IsIgnoredField(field) {
-			continue
-		}
-
-		fieldMap[GetFieldName(field)] = i
+	fieldMap := make(map[string]FieldRef)
+	for _, f := range WalkFields(t) {
+		fieldMap[GetFieldName(f.StructField)] = f
 	}
 
 	fieldMapCache.Store(t, fieldMap)
@@ -97,16 +90,12 @@ func GetPKColumn(table any) string {
 	}
 
 	pkCol := "id" // default
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		tag, _ := ParseDBTag(field)
+	for _, f := range WalkFields(t) {
+		tag, _ := ParseDBTag(f.StructField)
 		if !tag.Has(TokenPK) {
 			continue
 		}
-		pkCol = tag.Name
-		if pkCol == "" {
-			pkCol = strcase.ToSnake(field.Name)
-		}
+		pkCol = GetFieldName(f.StructField)
 		break
 	}
 
@@ -128,16 +117,12 @@ func ExtractSoftDeleteColumn(table any) string {
 	}
 
 	softDeleteCol := ""
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		tag, _ := ParseDBTag(field)
+	for _, f := range WalkFields(t) {
+		tag, _ := ParseDBTag(f.StructField)
 		if !tag.Has(TokenArchive) {
 			continue
 		}
-		softDeleteCol = tag.Name
-		if softDeleteCol == "" {
-			softDeleteCol = strcase.ToSnake(field.Name)
-		}
+		softDeleteCol = GetFieldName(f.StructField)
 		break
 	}
 
@@ -294,12 +279,12 @@ func ScanRow(rows *sql.Rows, doc any) error {
 			continue
 		}
 
-		fieldIdx, ok := fieldMap[col]
+		ref, ok := fieldMap[col]
 		if !ok {
 			continue
 		}
 
-		if err := setFieldValue(val.Field(fieldIdx), val.Type().Field(fieldIdx), rawVal); err != nil {
+		if err := setFieldValue(ref.Value(val), ref.StructField, rawVal); err != nil {
 			return err
 		}
 	}
@@ -427,11 +412,11 @@ func setNestedField(parent reflect.Value, prefix, inner string, rawVal any) erro
 	}
 
 	innerMap := GetDBFieldMap(target.Addr().Interface())
-	innerIdx, ok := innerMap[inner]
+	ref, ok := innerMap[inner]
 	if !ok {
 		return nil
 	}
-	return setFieldValue(target.Field(innerIdx), target.Type().Field(innerIdx), rawVal)
+	return setFieldValue(ref.Value(target), ref.StructField, rawVal)
 }
 
 // nestedFieldIndex returns the index of a struct or pointer-to-struct field on t

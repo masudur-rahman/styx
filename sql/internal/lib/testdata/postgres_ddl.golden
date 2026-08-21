@@ -149,10 +149,10 @@ at
 []
 
 ## typed_columns/create
-CREATE TABLE "typed_columns" (id VARCHAR(255) PRIMARY KEY, owner_id UUID, price numeric(10,2), nickname VARCHAR(255), created_at TIMESTAMP WITH TIME ZONE, expires_at date);
+CREATE TABLE "typed_columns" (id UUID PRIMARY KEY, owner_id UUID, price numeric(10,2), nickname VARCHAR(255), created_at TIMESTAMP WITH TIME ZONE, expires_at date);
 
 ## typed_columns/add-columns
-ALTER TABLE "typed_columns" ADD COLUMN id VARCHAR(255) PRIMARY KEY, ADD COLUMN owner_id UUID, ADD COLUMN price numeric(10,2), ADD COLUMN nickname VARCHAR(255), ADD COLUMN created_at TIMESTAMP WITH TIME ZONE, ADD COLUMN expires_at date
+ALTER TABLE "typed_columns" ADD COLUMN id UUID PRIMARY KEY, ADD COLUMN owner_id UUID, ADD COLUMN price numeric(10,2), ADD COLUMN nickname VARCHAR(255), ADD COLUMN created_at TIMESTAMP WITH TIME ZONE, ADD COLUMN expires_at date
 
 ## typed_columns/pk
 id
@@ -164,5 +164,41 @@ id
 []
 
 ## typed_columns/indexes
+[]
+
+## embedded/create
+CREATE TABLE "embedded" (name VARCHAR(255) NOT NULL, id UUID PRIMARY KEY, created_at TIMESTAMP WITH TIME ZONE, created_by VARCHAR(255), updated_at TIMESTAMP WITH TIME ZONE, updated_by VARCHAR(255), deleted_at TIMESTAMP WITH TIME ZONE);
+
+## embedded/add-columns
+ALTER TABLE "embedded" ADD COLUMN name VARCHAR(255) NOT NULL, ADD COLUMN id UUID PRIMARY KEY, ADD COLUMN created_at TIMESTAMP WITH TIME ZONE, ADD COLUMN created_by VARCHAR(255), ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE, ADD COLUMN updated_by VARCHAR(255), ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE
+
+## embedded/pk
+id
+
+## embedded/soft-delete
+"deleted_at"
+
+## embedded/unique-groups
+[]
+
+## embedded/indexes
+[]
+
+## shadowed_embed/create
+CREATE TABLE "shadowed_embed" (id VARCHAR(255) PRIMARY KEY, created_by VARCHAR(255) NOT NULL, created_at TIMESTAMP WITH TIME ZONE, updated_at TIMESTAMP WITH TIME ZONE, updated_by VARCHAR(255), deleted_at TIMESTAMP WITH TIME ZONE);
+
+## shadowed_embed/add-columns
+ALTER TABLE "shadowed_embed" ADD COLUMN id VARCHAR(255) PRIMARY KEY, ADD COLUMN created_by VARCHAR(255) NOT NULL, ADD COLUMN created_at TIMESTAMP WITH TIME ZONE, ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE, ADD COLUMN updated_by VARCHAR(255), ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE
+
+## shadowed_embed/pk
+id
+
+## shadowed_embed/soft-delete
+"deleted_at"
+
+## shadowed_embed/unique-groups
+[]
+
+## shadowed_embed/indexes
 []
 

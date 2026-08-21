@@ -441,16 +441,14 @@ func assignID(document any, id any) (any, error) {
 }
 
 func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
-	for i := 0; i < valElem.NumField(); i++ {
-		field := valElem.Type().Field(i)
-		dbTag := field.Tag.Get("db")
+	for _, f := range core.WalkFields(valElem.Type()) {
+		dbTag := f.Tag.Get("db")
 		if dbTag != "" {
 			dbTag = strings.Split(dbTag, ",")[0]
 		}
-		jsonTag := field.Tag.Get("json")
+		jsonTag := f.Tag.Get("json")
 		if dbTag == "id" || jsonTag == "id" {
-			idField = valElem.Field(i)
-			return idField
+			return f.Value(valElem)
 		}
 	}
 
