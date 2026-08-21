@@ -3,13 +3,12 @@ package lib
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
-
-	"github.com/iancoleman/strcase"
 )
 
 type fieldInfo struct {
@@ -36,20 +35,29 @@ func getTableInfo(d Dialect, table interface{}) ([]fieldInfo, error) {
 	}
 
 	var fields []fieldInfo
+	var tagErrs []error
 	for i := 0; i < tableType.NumField(); i++ {
 		fieldType := tableType.Field(i)
 		fieldValue := tableValue.Field(i)
 		if !fieldType.IsExported() {
-			fmt.Println("non-exported fields: ", fieldType.Name)
 			continue
 		}
 		if core.IsRelationField(fieldType) || core.IsIgnoredField(fieldType) {
 			continue
 		}
 
-		field := getFieldInfo(d, fieldType, fieldValue)
+		// Every bad tag on the struct is reported at once, so one run tells
+		// the caller about all of them rather than the first.
+		if _, err := core.ParseDBTag(fieldType); err != nil {
+			tagErrs = append(tagErrs, err)
+			continue
+		}
 
-		fields = append(fields, field)
+		fields = append(fields, getFieldInfo(d, fieldType, fieldValue))
+	}
+
+	if len(tagErrs) > 0 {
+		return nil, fmt.Errorf("table %s: %w", core.GetTableName(table), errors.Join(tagErrs...))
 	}
 
 	return fields, nil
@@ -110,16 +118,16 @@ func getFieldName(fieldType reflect.StructField) string {
 // it. SQLite's does, which previously produced the keyword twice and needed a
 // post-hoc string fixup to remove.
 func getFieldConstraint(d Dialect, fieldType reflect.StructField) (fc string, autoincr bool, isComposite bool) {
-	tokens := constraintTokens(fieldType)
+	tokens := core.DBTagTokens(fieldType)
 
 	var isPK bool
 	for _, tok := range tokens {
 		switch tok {
-		case "PK":
+		case core.TokenPK:
 			isPK = true
-		case "AUTOINCR":
+		case core.TokenAutoIncr:
 			autoincr = true
-		case "UQS":
+		case core.TokenUniqueS:
 			isComposite = true
 		}
 	}
@@ -130,44 +138,25 @@ func getFieldConstraint(d Dialect, fieldType reflect.StructField) (fc string, au
 	constraints := []string{}
 	for _, tok := range tokens {
 		switch tok {
-		case "PK":
+		case core.TokenPK:
 			if autoincr && d.AutoIncrIncludesPK() {
 				continue
 			}
 			constraints = append(constraints, "PRIMARY KEY")
-		case "UQ":
+		case core.TokenUnique:
 			constraints = append(constraints, "UNIQUE")
-		case "NOTNULL":
+		case core.TokenNotNull:
 			constraints = append(constraints, "NOT NULL")
-		case "UQS", "AUTOINCR":
+		case core.TokenUniqueS, core.TokenAutoIncr:
 			// handled above, no DDL effect of their own
-		case "REQ":
+		case core.TokenRequired:
 			// handled at query generation time, no DDL effect
-		case "JSON":
+		case core.TokenJSON:
 			// column type handled in getFieldInfo, no constraint
 		}
 	}
 
 	return strings.Join(constraints, " "), autoincr, isComposite
-}
-
-// constraintTokens returns the upper-cased attribute tokens of a db tag.
-func constraintTokens(fieldType reflect.StructField) []string {
-	dbTag := fieldType.Tag.Get("db")
-	if dbTag == "" {
-		return nil
-	}
-
-	tagParts := strings.Split(dbTag, ",")
-	if len(tagParts) < 2 {
-		return nil
-	}
-
-	var tokens []string
-	for _, part := range strings.Fields(tagParts[1]) {
-		tokens = append(tokens, strings.ToUpper(part))
-	}
-	return tokens
 }
 
 func hasReqTag(field reflect.StructField) bool {
@@ -177,75 +166,13 @@ func hasReqTag(field reflect.StructField) bool {
 // ExtractPKColumn returns the primary key column name from a struct's pk tag.
 // Returns "id" as default if no pk tag is found.
 func ExtractPKColumn(table any) string {
-	tableType := reflect.TypeOf(table)
-	if tableType.Kind() == reflect.Ptr {
-		tableType = tableType.Elem()
-	}
-	if tableType.Kind() == reflect.Slice {
-		tableType = tableType.Elem()
-	}
-	if tableType.Kind() != reflect.Struct {
-		return "id"
-	}
-
-	for i := 0; i < tableType.NumField(); i++ {
-		field := tableType.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
-			continue
-		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) >= 2 {
-			for _, part := range strings.Fields(parts[1]) {
-				if strings.ToUpper(part) == "PK" {
-					colName := parts[0]
-					if colName == "" {
-						colName = strcase.ToSnake(field.Name)
-					}
-					return colName
-				}
-			}
-		}
-	}
-
-	return "id"
+	return core.GetPKColumn(table)
 }
 
-// ExtractSoftDeleteColumn returns the column name tagged with archive.
-// Returns empty string if no soft delete tag is found.
+// ExtractSoftDeleteColumn returns the column name tagged with archive, or an
+// empty string when the struct has none.
 func ExtractSoftDeleteColumn(table any) string {
-	tableType := reflect.TypeOf(table)
-	if tableType.Kind() == reflect.Ptr {
-		tableType = tableType.Elem()
-	}
-	if tableType.Kind() == reflect.Slice {
-		tableType = tableType.Elem()
-	}
-	if tableType.Kind() != reflect.Struct {
-		return ""
-	}
-
-	for i := 0; i < tableType.NumField(); i++ {
-		field := tableType.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
-			continue
-		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		for _, part := range strings.Fields(parts[1]) {
-			if strings.ToLower(part) == "archive" {
-				colName := parts[0]
-				if colName == "" {
-					colName = strcase.ToSnake(field.Name)
-				}
-				return colName
-			}
-		}
-	}
-	return ""
+	return core.ExtractSoftDeleteColumn(table)
 }
 
 // getUniqueColumnGroups returns the unique-constraint column groups declared by
@@ -259,16 +186,8 @@ func getUniqueColumnGroups(t reflect.Type) [][]string {
 	groups := [][]string{}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
-			continue
-		}
-
-		tagParts := strings.Split(dbTag, ",")
-		for _, part := range tagParts[1:] {
-			if strings.ToUpper(part) == "UQS" {
-				groups = append(groups, []string{getFieldName(field)})
-			}
+		if core.HasDBToken(field, core.TokenUniqueS) {
+			groups = append(groups, []string{getFieldName(field)})
 		}
 	}
 
@@ -457,6 +376,9 @@ type indexInfo struct {
 }
 
 // extractIndexes parses idx and uidx tags from a struct type.
+//
+// namedOrder preserves first-declaration order. Ranging the map directly
+// emitted CREATE INDEX statements in a different order on every run.
 func extractIndexes(table any) []indexInfo {
 	tableType := reflect.TypeOf(table)
 	if tableType.Kind() == reflect.Ptr {
@@ -472,47 +394,34 @@ func extractIndexes(table any) []indexInfo {
 
 	for i := 0; i < tableType.NumField(); i++ {
 		field := tableType.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
+		tag, _ := core.ParseDBTag(field)
+		if len(tag.Tokens) == 0 {
 			continue
 		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		colName := parts[0]
-		if colName == "" {
-			colName = strcase.ToSnake(field.Name)
-		}
+		colName := core.GetFieldName(field)
 
-		for _, part := range strings.Fields(parts[1]) {
-			lp := strings.ToLower(part)
-			if lp == "idx" {
-				unnamed = append(unnamed, indexInfo{Cols: []string{colName}})
-			} else if lp == "uidx" {
-				unnamed = append(unnamed, indexInfo{Cols: []string{colName}, Unique: true})
-			} else if strings.HasPrefix(lp, "idx:") {
-				idxName := strings.TrimPrefix(lp, "idx:")
-				if existing, ok := named[idxName]; ok {
-					existing.Cols = append(existing.Cols, colName)
-				} else {
-					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}}
-					namedOrder = append(namedOrder, idxName)
-				}
-			} else if strings.HasPrefix(lp, "uidx:") {
-				idxName := strings.TrimPrefix(lp, "uidx:")
-				if existing, ok := named[idxName]; ok {
-					existing.Cols = append(existing.Cols, colName)
-				} else {
-					named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}, Unique: true}
-					namedOrder = append(namedOrder, idxName)
-				}
+		for _, tok := range tag.Tokens {
+			prefix, idxName, isNamed := strings.Cut(tok, ":")
+			unique := prefix == core.TokenUIndex
+			if prefix != core.TokenIndex && prefix != core.TokenUIndex {
+				continue
 			}
+
+			if !isNamed {
+				unnamed = append(unnamed, indexInfo{Cols: []string{colName}, Unique: unique})
+				continue
+			}
+
+			idxName = strings.ToLower(idxName)
+			if existing, ok := named[idxName]; ok {
+				existing.Cols = append(existing.Cols, colName)
+				continue
+			}
+			named[idxName] = &indexInfo{Name: idxName, Cols: []string{colName}, Unique: unique}
+			namedOrder = append(namedOrder, idxName)
 		}
 	}
 
-	// namedOrder preserves first-declaration order. Ranging the map directly
-	// emitted CREATE INDEX statements in a different order on every run.
 	var result []indexInfo
 	for _, name := range namedOrder {
 		result = append(result, *named[name])

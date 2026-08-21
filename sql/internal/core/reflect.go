@@ -78,14 +78,7 @@ func GetDBFieldMap(doc any) map[string]int {
 			continue
 		}
 
-		colName := field.Name
-		if dbTag := field.Tag.Get("db"); dbTag != "" {
-			tagParts := strings.Split(dbTag, ",")
-			if tagParts[0] != "" {
-				colName = tagParts[0]
-			}
-		}
-		fieldMap[strcase.ToSnake(colName)] = i
+		fieldMap[GetFieldName(field)] = i
 	}
 
 	fieldMapCache.Store(t, fieldMap)
@@ -106,26 +99,17 @@ func GetPKColumn(table any) string {
 	pkCol := "id" // default
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
+		tag, _ := ParseDBTag(field)
+		if !tag.Has(TokenPK) {
 			continue
 		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) >= 2 {
-			for _, part := range strings.Fields(parts[1]) {
-				if strings.ToUpper(part) == "PK" {
-					if parts[0] != "" {
-						pkCol = parts[0]
-					} else {
-						pkCol = strcase.ToSnake(field.Name)
-					}
-					goto found
-				}
-			}
+		pkCol = tag.Name
+		if pkCol == "" {
+			pkCol = strcase.ToSnake(field.Name)
 		}
+		break
 	}
 
-found:
 	pkColumnCache.Store(t, pkCol)
 	return pkCol
 }
@@ -146,26 +130,17 @@ func ExtractSoftDeleteColumn(table any) string {
 	softDeleteCol := ""
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
+		tag, _ := ParseDBTag(field)
+		if !tag.Has(TokenArchive) {
 			continue
 		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) < 2 {
-			continue
+		softDeleteCol = tag.Name
+		if softDeleteCol == "" {
+			softDeleteCol = strcase.ToSnake(field.Name)
 		}
-		for _, part := range strings.Fields(parts[1]) {
-			if strings.ToLower(part) == "archive" {
-				softDeleteCol = parts[0]
-				if softDeleteCol == "" {
-					softDeleteCol = strcase.ToSnake(field.Name)
-				}
-				goto found
-			}
-		}
+		break
 	}
 
-found:
 	softDeleteCache.Store(t, softDeleteCol)
 	return softDeleteCol
 }
@@ -173,49 +148,20 @@ found:
 // GetFieldName returns the database column name for a struct field.
 func GetFieldName(field reflect.StructField) string {
 	fieldName := field.Name
-	if dbTag := field.Tag.Get("db"); dbTag != "" {
-		colName := strings.Split(dbTag, ",")[0]
-		if colName != "" {
-			fieldName = colName
-		}
+	if tag, _ := ParseDBTag(field); tag.Name != "" {
+		fieldName = tag.Name
 	}
 	return strcase.ToSnake(fieldName)
 }
 
 // HasReqTag checks if a struct field has the "req" option in its db tag.
 func HasReqTag(field reflect.StructField) bool {
-	dbTag := field.Tag.Get("db")
-	if dbTag == "" {
-		return false
-	}
-	parts := strings.SplitN(dbTag, ",", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	for _, part := range strings.Fields(parts[1]) {
-		if strings.ToUpper(part) == "REQ" {
-			return true
-		}
-	}
-	return false
+	return HasDBToken(field, TokenRequired)
 }
 
 // HasJSONTag checks if a struct field has the "json" option in its db tag.
 func HasJSONTag(field reflect.StructField) bool {
-	dbTag := field.Tag.Get("db")
-	if dbTag == "" {
-		return false
-	}
-	parts := strings.SplitN(dbTag, ",", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	for _, part := range strings.Fields(parts[1]) {
-		if strings.ToUpper(part) == "JSON" {
-			return true
-		}
-	}
-	return false
+	return HasDBToken(field, TokenJSON)
 }
 
 // IsJSONField reports whether a struct field is stored as JSON in the

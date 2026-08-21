@@ -220,3 +220,61 @@ func TestGetUniqueColumnGroups_deterministic(t *testing.T) {
 		require.Equal(t, want, getUniqueColumnGroups(typ), "run %d", i)
 	}
 }
+
+// TestGetTableInfo_rejectsBadTags checks that malformed tags fail loudly.
+// Every one of these forms used to be dropped without a word: db:"id,pk,uq"
+// produced a column with no unique constraint and no error.
+func TestGetTableInfo_rejectsBadTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		table   any
+		wantErr []string
+	}{
+		{
+			name: "comma separated attributes",
+			table: struct {
+				ID string `db:"id,pk,uq"`
+			}{},
+			wantErr: []string{"field ID", "3 comma-separated sections"},
+		},
+		{
+			name: "unknown token",
+			table: struct {
+				ID string `db:"id,pkk"`
+			}{},
+			wantErr: []string{"field ID", `unknown option "PKK"`},
+		},
+		{
+			name: "every bad field is reported, not just the first",
+			table: struct {
+				ID   string `db:"id,pkk"`
+				Name string `db:"name,bogus"`
+			}{},
+			wantErr: []string{"field ID", "field Name", `"PKK"`, `"BOGUS"`},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := getTableInfo(Postgres, tc.table)
+			require.Error(t, err)
+			for _, want := range tc.wantErr {
+				require.ErrorContains(t, err, want)
+			}
+		})
+	}
+}
+
+// TestGetUniqueColumnGroups_composesWithOtherTokens guards a fix: the old
+// parser compared whole comma sections against "UQS", so a uqs sharing a
+// section with any other token was never seen.
+func TestGetUniqueColumnGroups_composesWithOtherTokens(t *testing.T) {
+	type table struct {
+		ID     string `db:"id,pk"`
+		Tenant string `db:"tenant,notnull uqs"`
+		Code   string `db:"code,uqs notnull"`
+	}
+
+	groups := getUniqueColumnGroups(reflect.TypeOf(table{}))
+	require.Equal(t, [][]string{{"tenant"}, {"code"}}, groups)
+}
