@@ -487,26 +487,47 @@ func (stmt *Statement) IsSoftDelete() bool {
 	return stmt.SoftDeleteColumn() != "" && !stmt.forceDelete
 }
 
+// The values the soft-delete column is moved between.
+const (
+	softDeletedValue = "CURRENT_TIMESTAMP"
+	softLiveValue    = "NULL"
+)
+
 // GenerateSoftDeleteQuery generates an UPDATE that marks at most one row deleted.
 func (stmt *Statement) GenerateSoftDeleteQuery() string {
-	return stmt.softDeleteQuery("CURRENT_TIMESTAMP", true)
+	return stmt.softDeleteQuery(true, true)
 }
 
 // GenerateSoftDeleteManyQuery generates an UPDATE that marks every matching row
 // deleted.
 func (stmt *Statement) GenerateSoftDeleteManyQuery() string {
-	return stmt.softDeleteQuery("CURRENT_TIMESTAMP", false)
+	return stmt.softDeleteQuery(true, false)
 }
 
 // GenerateRestoreQuery generates an UPDATE that clears the soft delete column
 // on at most one row, the inverse of GenerateSoftDeleteQuery.
 func (stmt *Statement) GenerateRestoreQuery() string {
-	return stmt.softDeleteQuery("NULL", true)
+	return stmt.softDeleteQuery(false, true)
 }
 
-func (stmt *Statement) softDeleteQuery(value string, limitOne bool) string {
+// softDeleteQuery moves rows to the other side of the soft-delete marker.
+//
+// Rows already on the destination side are excluded, which matters most under a
+// single-row cap: a filter matching one deleted row and two live ones would
+// otherwise re-stamp the deleted one and report success, leaving both live rows
+// in place. It also keeps the affected-row count honest, so a delete that
+// changed nothing reports ErrNotFound rather than a silent no-op.
+func (stmt *Statement) softDeleteQuery(markDeleted, limitOne bool) string {
+	col := stmt.SoftDeleteColumn()
+
+	value, guard := softDeletedValue, col+" IS NULL"
+	if !markDeleted {
+		value, guard = softLiveValue, col+" IS NOT NULL"
+	}
+	stmt.where = stmt.AddWhereClause(guard)
+
 	return fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s",
-		quoteIdent(stmt.table), stmt.SoftDeleteColumn(), value, stmt.rowLimit(limitOne))
+		quoteIdent(stmt.table), col, value, stmt.rowLimit(limitOne))
 }
 
 // rowLimit returns the statement's WHERE condition, narrowed to a single row

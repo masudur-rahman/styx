@@ -123,22 +123,22 @@ sql:  DELETE FROM "users" WHERE city = $1
 args: []interface {}{"dhaka"}
 
 ## delete/soft
-sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE 
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE deleted_at IS NULL
 args: []interface {}(nil)
 
 ## delete/soft-where
-sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 LIMIT 1)
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 AND deleted_at IS NULL LIMIT 1)
 args: []interface {}{"dhaka"}
 
 ## delete/soft-many-where
-sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE city = $1
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE city = $1 AND deleted_at IS NULL
 args: []interface {}{"dhaka"}
 
 ## delete/restore
-sql:  UPDATE "users" SET deleted_at = NULL WHERE 
+sql:  UPDATE "users" SET deleted_at = NULL WHERE deleted_at IS NOT NULL
 args: []interface {}(nil)
 
 ## delete/restore-where
-sql:  UPDATE "users" SET deleted_at = NULL WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 LIMIT 1)
+sql:  UPDATE "users" SET deleted_at = NULL WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 AND deleted_at IS NOT NULL LIMIT 1)
 args: []interface {}{"dhaka"}
 

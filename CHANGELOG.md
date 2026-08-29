@@ -26,6 +26,11 @@
   DeleteOne(ctx)` removed the row outright from a soft-delete table. It now falls
   back to the column `Sync` registered, as reads already did. `Restore` and
   `Count` by ID are fixed the same way; `ForceDelete` still deletes for real.
+- **Soft delete and restore now skip rows already on the target side.** With the
+  single-row cap ordering by primary key, a filter matching one deleted row and
+  two live ones re-stamped the deleted one and reported success. A delete that
+  finds nothing live now returns `ErrNotFound`, and `DeleteMany` no longer counts
+  rows it had already deleted.
 
 ## v1.4.0 (2026-04-17)
 

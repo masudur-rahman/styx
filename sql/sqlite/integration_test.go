@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/masudur-rahman/styx/v2/dberr"
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/sqlite"
 
@@ -397,4 +398,53 @@ func TestForceDelete_stillRemovesTheRow(t *testing.T) {
 	all, err := db.Table("user").WithDeleted().Count(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), all, "force delete removes the row for real")
+}
+
+// TestDeleteOne_skipsRowsAlreadyDeleted guards the interaction between the
+// single-row cap and soft delete: the cap orders by primary key, so without a
+// guard the lowest id wins even when it is already deleted, and the delete
+// reports success having changed nothing anyone can see.
+func TestDeleteOne_skipsRowsAlreadyDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30)
+
+	// Delete the lowest id, the row the cap would otherwise reach first.
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+	assert.Equal(t, int64(2), countAge(t, db, 30))
+
+	assert.NoError(t, db.Table("user").DeleteOne(ctx, User{Age: 30}))
+	assert.Equal(t, int64(1), countAge(t, db, 30), "a live row must be the one deleted")
+}
+
+func TestDeleteOne_notFoundWhenEveryMatchIsAlreadyDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").DeleteOne(ctx, User{Age: 30}))
+
+	err := db.Table("user").DeleteOne(ctx, User{Age: 30})
+	assert.ErrorIs(t, err, dberr.ErrNotFound, "nothing live was left to delete")
+}
+
+func TestDeleteMany_countsOnlyLiveRows(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+
+	removed, err := db.Table("user").DeleteMany(ctx, User{Age: 30})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), removed, "the row already deleted is not counted again")
+}
+
+func TestRestore_notFoundWhenNothingIsDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	err := db.Table("user").ID(1).Restore(ctx)
+	assert.ErrorIs(t, err, dberr.ErrNotFound, "the row was never deleted")
 }
