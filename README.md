@@ -33,9 +33,10 @@ go test ./examples/
 | Feature | Example |
 |---------|---------|
 | CRUD + filters (ID / Where / struct filter / Columns) | [`example_crud_test.go`](examples/example_crud_test.go) |
+| One row vs many (`UpdateOne`/`UpdateMany`, `DeleteOne`/`DeleteMany`) | [`example_crud_test.go`](examples/example_crud_test.go) |
 | Ordering, pagination, LIKE / IN, aggregates + GROUP BY | [`example_query_test.go`](examples/example_query_test.go) |
 | Row count (`Count`, soft-delete aware) | [`example_count_test.go`](examples/example_count_test.go) |
-| Ignore (`db:"-"`) and `notnull` tags | [`example_tags_test.go`](examples/example_tags_test.go) |
+| Every `db` tag on one struct, plus relations and tag errors | [`example_tags_test.go`](examples/example_tags_test.go) |
 | Bulk insert (single multi-row `INSERT`) | [`example_bulk_test.go`](examples/example_bulk_test.go) |
 | Lifecycle hooks (`BeforeCreate`, `AfterFind`, …) | [`example_hooks_test.go`](examples/example_hooks_test.go) |
 | Validation (tag rules + custom `Validate()`) | [`example_validation_test.go`](examples/example_validation_test.go) |
@@ -48,6 +49,8 @@ go test ./examples/
 | CTE query builder (`With`) | [`example_cte_test.go`](examples/example_cte_test.go) |
 | Connection pool config + `Stats()` | [`example_pool_test.go`](examples/example_pool_test.go) |
 | Query observer (logging / metrics / tracing) | [`example_observer_test.go`](examples/example_observer_test.go) |
+| Column types: `styx.UUID`, `type=`, registry, `sql.Scanner` | [`example_tags_test.go`](examples/example_tags_test.go) |
+| Embedded structs flattened into columns | [`example_tags_test.go`](examples/example_tags_test.go) |
 | Prepared-statement caching (`WithStmtCache`) | [`example_stmtcache_test.go`](examples/example_stmtcache_test.go) |
 | Versioned migrations (destructive changes) | [`example_migrate_test.go`](examples/example_migrate_test.go) |
 
@@ -64,7 +67,6 @@ import (
 
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/sqlite"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 )
 
 type User struct {
@@ -77,7 +79,7 @@ type User struct {
 
 func main() {
 	ctx := context.Background()
-	conn, _ := lib.GetSQLiteConnection("test.db")
+	conn, _ := sqlite.GetSQLiteConnection("test.db")
 
 	db := sqlite.NewSQLite(conn)
 
@@ -92,6 +94,7 @@ func main() {
 	db.Table("user").Where("email=?", "masud@example.com").FindOne(ctx, &user)
 
 	db.Table("user").ID(user.ID).UpdateOne(ctx, User{Email: "test@example.com"})
+	db.Table("user").Where("email=?", "test@example.com").UpdateMany(ctx, User{FullName: "Test User"})
 
 	db.Table("user").ID(1).DeleteOne(ctx)
 }
@@ -110,6 +113,11 @@ db:"column_name,options"
 - **column_name** (before the comma): Sets the database column name. If empty, the field name is converted to `snake_case` automatically.
 - **options** (after the comma): Space-separated list of constraint/behavior flags.
 
+> Only the first comma is structural, so an option value may contain one
+> (`type=numeric(10,2)`). Separating options with commas instead of spaces is an
+> error, as is an unrecognised option — `Sync` reports every bad tag on the
+> struct at once rather than dropping them silently.
+
 ### Available Options
 
 | Tag        | Purpose                          | DDL Effect                                       | Query Effect |
@@ -125,6 +133,7 @@ db:"column_name,options"
 | `archive`  | Soft-delete marker column        | Timestamp column                                 | `DeleteOne` sets it instead of removing the row; reads filter it out unless `WithDeleted()` |
 | `idx`      | Secondary index                  | `CREATE INDEX` on `Sync`                         | -            |
 | `uidx` | Unique secondary index         | `CREATE UNIQUE INDEX` on `Sync`                  | -            |
+| `type=<t>` | Explicit column type         | `type=uuid` maps to `UUID` (Postgres) / `TEXT` (SQLite); any other value is emitted verbatim, e.g. `type=numeric(10,2)` | - |
 
 > Indexes can be named for composite coverage: fields sharing the same
 > `idx:<name>` (or `uidx:<name>`) are combined into one multi-column index.
@@ -157,6 +166,90 @@ type Budget struct {
 	Meta       Detail `db:"meta,json"`          // any struct/map/slice stored as JSON
 }
 ```
+
+### Column Types
+
+Styx picks a column type from the Go field type. Three things override that, in
+order: a `type=` tag, the type registry, and then the built-in kind mapping.
+
+`styx.UUID` is a named `string`, so it assigns from a literal, compares with
+`==` and marshals to JSON as a plain string — but it maps to a native `uuid`
+column on Postgres and `TEXT` on SQLite:
+
+```go
+type Patient struct {
+	ID   styx.UUID `db:"id,pk"`
+	Name string    `db:"name"`
+}
+```
+
+`uuid.UUID` from `github.com/google/uuid` or `github.com/gofrs/uuid` maps the
+same way, without Styx importing either package.
+
+The `type=` tag is the third way, and the only one that needs no Go type
+change — useful when a field must stay a plain `string`. The first three give a
+native `uuid` column on Postgres; the last does not, because a bare `string`
+could be anything:
+
+```go
+ID styx.UUID `db:"id,pk"`            // UUID  — styx's own named string
+ID uuid.UUID `db:"id,pk"`            // UUID  — google/uuid or gofrs/uuid
+ID string    `db:"id,pk type=uuid"`  // UUID  — explicit tag, Go type unchanged
+ID string    `db:"id,pk"`            // TEXT  — no opt-in, so no guessing
+```
+
+`type=` also takes any literal SQL type, passed through untouched:
+
+```go
+Price   string `db:"price,type=numeric(10,2)"`
+Address string `db:"address,type=inet"`
+```
+
+Register your own types once, before the first `Sync`:
+
+```go
+styx.RegisterSQLType(reflect.TypeOf(Money(0)), map[string]string{
+	styx.DialectPostgres: "NUMERIC(19,4)",
+	styx.DialectSQLite:   "REAL",
+})
+```
+
+A type implementing `sql.Scanner` and `driver.Valuer` handles its own reading
+and writing, so it can pack anything into one column.
+
+> A defined type over another uuid type — `type UUID uuid.UUID` — inherits none
+> of its methods, so it loses `Scan`, `Value` and `MarshalText` and will not
+> round-trip. Use an alias (`type UUID = uuid.UUID`) or a string-backed type.
+
+### Embedded Structs
+
+An embedded struct's fields become columns of the outer table, so shared
+bookkeeping is declared once:
+
+```go
+type Auditable struct {
+	CreatedAt time.Time  `db:"created_at"`
+	CreatedBy string     `db:"created_by"`
+	DeletedAt *time.Time `db:"deleted_at,archive"`
+}
+
+type Article struct {
+	ID    int64  `db:"id,pk autoincr"`
+	Title string `db:"title"`
+	Auditable
+}
+```
+
+`article` gets `created_at`, `created_by` and `deleted_at`. Tags are found
+through the embed too, so `pk` and `archive` work from an embedded struct.
+
+An outer field hides an embedded one of the same column name, matching Go's own
+rule. Structs that map to a single column stay whole rather than being
+flattened: `time.Time`, anything registered as a column type, anything
+implementing `sql.Scanner` or `driver.Valuer`, and anything carrying a `db`
+tag. A type declaring `TableName()` is a relation, not a group of columns.
+
+> Embedded *pointers* to structs are skipped, not flattened.
 
 ### JSON Columns
 
@@ -356,7 +449,9 @@ type User struct {
 db.DeleteOne(ctx, User{ID: 1})    // Sets deleted_at = CURRENT_TIMESTAMP
 db.FindMany(ctx, &users)          // Filters out rows where deleted_at IS NOT NULL
 db.WithDeleted().FindMany(ctx, &users) // Includes deleted rows
-db.Restore(ctx, User{ID: 1})      // Clears deleted_at
+db.Restore(ctx, User{ID: 1})      // Clears deleted_at on one row
+
+n, _ := db.Where("age < ?", 18).DeleteMany(ctx, User{}) // Marks every match deleted
 ```
 
 #### Struct Validation
@@ -426,8 +521,39 @@ All operations take a `context.Context` as the first argument.
 | `FindMany(ctx, docs any, filter ...any) error`            | Find multiple records into a slice   |
 | `InsertOne(ctx, doc any) (id any, err error)`             | Insert one record. Returns inserted ID. |
 | `InsertMany(ctx, docs []any) ([]any, error)`              | Bulk insert as a single multi-row `INSERT`; returns generated IDs |
-| `UpdateOne(ctx, doc any) error`                           | Update one record (requires WHERE)   |
-| `DeleteOne(ctx, filter ...any) error`                     | Delete one record (requires WHERE)   |
+| `UpdateOne(ctx, doc any) error`                           | Update one record (requires WHERE). `ErrNotFound` if nothing matched |
+| `UpdateMany(ctx, doc any) (int64, error)`                 | Update every matching record; returns rows changed |
+| `DeleteOne(ctx, filter ...any) error`                     | Delete one record (requires WHERE). `ErrNotFound` if nothing matched |
+| `DeleteMany(ctx, filter ...any) (int64, error)`           | Delete every matching record; returns rows removed |
+
+#### One Row or Many
+
+The `*One` methods change exactly one row, even when the conditions match more.
+Say which you mean:
+
+```go
+// one row, whichever has the lowest primary key
+db.Table("user").Where("status = ?", "pending").UpdateOne(ctx, User{Status: "active"})
+
+// every matching row
+n, _ := db.Table("user").Where("status = ?", "pending").UpdateMany(ctx, User{Status: "active"})
+```
+
+Matching nothing is an error for `*One` (`dberr.ErrNotFound`) but not for `*Many`,
+which returns `(0, nil)` — a bulk update that changes nothing is a normal result.
+
+Neither Postgres nor SQLite supports `UPDATE ... LIMIT`, so the cap is applied by
+selecting the row in a subquery:
+
+```sql
+UPDATE "user" SET status = $1
+WHERE id IN (SELECT id FROM "user" WHERE status = $2 ORDER BY id LIMIT 1)
+```
+
+It orders by the primary key, so the same call picks the same row rather than
+whichever the planner reached first. A struct with no `pk` tag falls back to the
+database's own row identifier (`ctid` on Postgres, `rowid` on SQLite) and has no
+such guarantee. An `ID()` lookup already names one row and is left alone.
 
 #### Bulk Insert
 

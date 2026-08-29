@@ -8,7 +8,8 @@ import (
 	"net"
 
 	"github.com/masudur-rahman/styx/v2/pkg"
-	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
+	lib "github.com/masudur-rahman/styx/v2/sql/internal/lib"
+	"github.com/masudur-rahman/styx/v2/sql/postgres"
 	"github.com/masudur-rahman/styx/v2/sql/postgres/pg-grpc/pb"
 
 	"google.golang.org/grpc"
@@ -28,13 +29,13 @@ func (p *PostgresDB) GetById(ctx context.Context, params *pb.IdParams) (*pb.Reco
 	filter := map[string]interface{}{
 		"id": params.GetId(),
 	}
-	query := lib.GenerateReadQuery(params.GetTable(), filter)
-	records, err := lib.ExecuteReadQuery(ctx, query, p.conn, 1)
+	query := GenerateReadQuery(params.GetTable(), filter)
+	records, err := ExecuteReadQuery(ctx, query, p.conn, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	return lib.MapToRecord(records[0])
+	return MapToRecord(records[0])
 }
 
 func (p *PostgresDB) Get(ctx context.Context, params *pb.FilterParams) (*pb.RecordResponse, error) {
@@ -43,25 +44,25 @@ func (p *PostgresDB) Get(ctx context.Context, params *pb.FilterParams) (*pb.Reco
 		return nil, err
 	}
 
-	query := lib.GenerateReadQuery(params.GetTable(), filter)
-	records, err := lib.ExecuteReadQuery(ctx, query, p.conn, 1)
+	query := GenerateReadQuery(params.GetTable(), filter)
+	records, err := ExecuteReadQuery(ctx, query, p.conn, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	return lib.MapToRecord(records[0])
+	return MapToRecord(records[0])
 }
 
 func (p *PostgresDB) Find(ctx context.Context, params *pb.FilterParams) (*pb.RecordsResponse, error) {
 	filter, err := pkg.ProtoAnyToMap(params.GetFilter())
 
-	query := lib.GenerateReadQuery(params.GetTable(), filter)
-	records, err := lib.ExecuteReadQuery(ctx, query, p.conn, -1)
+	query := GenerateReadQuery(params.GetTable(), filter)
+	records, err := ExecuteReadQuery(ctx, query, p.conn, -1)
 	if err != nil {
 		return nil, err
 	}
 
-	return lib.MapsToRecords(records)
+	return MapsToRecords(records)
 }
 
 func (p *PostgresDB) Create(ctx context.Context, params *pb.CreateParams) (*pb.RecordResponse, error) {
@@ -70,7 +71,7 @@ func (p *PostgresDB) Create(ctx context.Context, params *pb.CreateParams) (*pb.R
 		return nil, err
 	}
 
-	query := lib.GenerateInsertQuery(params.GetTable(), record)
+	query := GenerateInsertQuery(params.GetTable(), record)
 	_, err = lib.ExecuteWriteQuery(ctx, query, p.conn)
 	if err != nil {
 		return nil, err
@@ -93,7 +94,7 @@ func (p *PostgresDB) Update(ctx context.Context, params *pb.UpdateParams) (*pb.R
 		return nil, err
 	}
 
-	query := lib.GenerateUpdateQuery(params.GetTable(), params.GetId(), record)
+	query := GenerateUpdateQuery(params.GetTable(), params.GetId(), record)
 	_, err = lib.ExecuteWriteQuery(ctx, query, p.conn)
 	if err != nil {
 		return nil, err
@@ -106,7 +107,7 @@ func (p *PostgresDB) Update(ctx context.Context, params *pb.UpdateParams) (*pb.R
 }
 
 func (p *PostgresDB) Delete(ctx context.Context, params *pb.IdParams) (*pb.DeleteResponse, error) {
-	query := lib.GenerateDeleteQuery(params.GetTable(), params.GetId())
+	query := GenerateDeleteQuery(params.GetTable(), params.GetId())
 	_, err := lib.ExecuteWriteQuery(ctx, query, p.conn)
 	if err != nil {
 		return nil, err
@@ -128,7 +129,7 @@ func (p *PostgresDB) Exec(ctx context.Context, params *pb.ExecParams) (*pb.ExecR
 func (p *PostgresDB) Sync(tables ...interface{}) error {
 	ctx := context.Background()
 	for _, table := range tables {
-		if err := lib.SyncTable(ctx, p.conn, table); err != nil {
+		if err := lib.SyncTable(ctx, lib.Postgres, p.conn, table); err != nil {
 			return err
 		}
 	}
@@ -136,13 +137,13 @@ func (p *PostgresDB) Sync(tables ...interface{}) error {
 	return nil
 }
 
-func StartPostgresServer(connConfig lib.PostgresConfig, host string, port int, tables ...interface{}) error {
+func StartPostgresServer(connConfig postgres.PostgresConfig, host string, port int, tables ...interface{}) error {
 	server := grpc.NewServer()
 
 	hs := NewHealthChecker()
 	health.RegisterHealthServer(server, hs)
 
-	pgConn, err := lib.GetPostgresConnection(connConfig)
+	pgConn, err := postgres.GetPostgresConnection(connConfig)
 	if err != nil {
 		return err
 	}

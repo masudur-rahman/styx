@@ -1,0 +1,63 @@
+## Int
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT" resolved="INTEGER"
+
+## Int32
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT" resolved="INTEGER"
+
+## Int64
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT" resolved="INTEGER"
+
+## Uint64
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT" resolved="INTEGER"
+
+## Float32
+plain="REAL" autoincr="REAL" resolved="REAL"
+
+## Float64
+plain="REAL" autoincr="REAL" resolved="REAL"
+
+## Bool
+plain="BOOLEAN" autoincr="BOOLEAN" resolved="BOOLEAN"
+
+## String
+plain="TEXT" autoincr="TEXT" resolved="TEXT"
+
+## Bytes
+plain="BLOB" autoincr="BLOB" resolved="BLOB"
+
+## Time
+plain="DATETIME" autoincr="DATETIME" resolved="DATETIME"
+
+## IntPtr
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT" resolved="INTEGER"
+
+## Int64Ptr
+plain="INTEGER" autoincr="INTEGER PRIMARY KEY AUTOINCREMENT" resolved="INTEGER"
+
+## StringPtr
+plain="TEXT" autoincr="TEXT" resolved="TEXT"
+
+## BoolPtr
+plain="BOOLEAN" autoincr="BOOLEAN" resolved="BOOLEAN"
+
+## TimePtr
+plain="DATETIME" autoincr="DATETIME" resolved="DATETIME"
+
+## typed/ID
+resolved="TEXT"
+
+## typed/OwnerID
+resolved="TEXT"
+
+## typed/Price
+resolved="numeric(10,2)"
+
+## typed/Nickname
+resolved="TEXT"
+
+## typed/Created
+resolved="DATETIME"
+
+## typed/Expires
+resolved="date"
+

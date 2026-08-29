@@ -1,4 +1,4 @@
-package lib
+package server
 
 import (
 	"context"
@@ -7,54 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/masudur-rahman/styx/v2/dberr"
 	"github.com/masudur-rahman/styx/v2/pkg"
-	isql "github.com/masudur-rahman/styx/v2/sql"
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
 	"github.com/masudur-rahman/styx/v2/sql/postgres/pg-grpc/pb"
 
 	"github.com/iancoleman/strcase"
-
-	_ "github.com/lib/pq"
 )
-
-type PostgresConfig struct {
-	Name     string `json:"name" yaml:"name"`
-	Host     string `json:"host" yaml:"host"`
-	Port     string `json:"port" yaml:"port"`
-	User     string `json:"user" yaml:"user"`
-	Password string `json:"password" yaml:"password"`
-	SSLMode  string `json:"sslmode" yaml:"sslmode"`
-}
-
-func (cp PostgresConfig) String() string {
-	return fmt.Sprintf("user=%v password=%v dbname=%v host=%v port=%v sslmode=%v", cp.User, cp.Password, cp.Name, cp.Host, cp.Port, cp.SSLMode)
-}
-
-// GetPostgresConnection opens a PostgreSQL database and returns a *sql.DB
-// connection pool. An optional PoolConfig tunes the pool's size and connection
-// lifetimes.
-func GetPostgresConnection(cfg PostgresConfig, pool ...isql.PoolConfig) (*sql.DB, error) {
-	db, err := sql.Open("postgres", cfg.String())
-	if err != nil {
-		return nil, err
-	}
-	if len(pool) > 0 {
-		pool[0].Apply(db)
-	}
-
-	if err = db.PingContext(context.Background()); err != nil {
-		return nil, err
-	}
-
-	return db, nil
-}
-
-// IsZeroValue checks if a value is its type's zero value.
-// Deprecated: Use dberr.IsZeroValue instead.
-func IsZeroValue(value any) bool {
-	return dberr.IsZeroValue(value)
-}
 
 func toDBFieldName(fieldName string) string {
 	return strcase.ToSnake(fieldName)
@@ -62,10 +20,6 @@ func toDBFieldName(fieldName string) string {
 
 func fromDBFieldName(fieldName string) string {
 	return strcase.ToLowerCamel(fieldName)
-}
-
-func ExecuteWriteQuery(ctx context.Context, query string, conn *sql.DB) (sql.Result, error) {
-	return conn.ExecContext(ctx, query)
 }
 
 func MapToRecord(record map[string]any) (*pb.RecordResponse, error) {

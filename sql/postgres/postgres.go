@@ -3,14 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"reflect"
-	"strings"
 
 	"github.com/masudur-rahman/styx/v2/dberr"
 	isql "github.com/masudur-rahman/styx/v2/sql"
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
-	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
+	lib "github.com/masudur-rahman/styx/v2/sql/internal/lib"
 	"github.com/masudur-rahman/styx/v2/validation"
 )
 
@@ -26,7 +23,7 @@ type Postgres struct {
 // and WithStmtCache configure cross-cutting behaviour.
 func NewPostgres(conn *sql.DB, opts ...isql.Option) Postgres {
 	cfg := isql.BuildConfig(opts...)
-	pg := Postgres{conn: conn, observer: cfg.Observer}
+	pg := Postgres{conn: conn, observer: cfg.Observer, statement: lib.NewStatement(lib.Postgres)}
 	if cfg.StmtCache {
 		pg.cache = core.NewStmtCache()
 	}
@@ -187,7 +184,7 @@ func (pg Postgres) preload(ctx context.Context, docs any) error {
 		return nil
 	}
 	base := pg
-	base.statement = lib.Statement{}
+	base.statement = lib.NewStatement(lib.Postgres)
 	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
@@ -347,7 +344,7 @@ func (pg Postgres) InsertOne(ctx context.Context, document any) (id any, err err
 	if err != nil {
 		return nil, err
 	}
-	if _, err = assignID(document, id); err != nil {
+	if err = core.AssignID(document, id); err != nil {
 		return nil, err
 	}
 	if err = core.RunAfterCreate(ctx, document); err != nil {
@@ -381,7 +378,7 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 
 	for i, doc := range documents {
 		if i < len(ids) {
-			if _, err := assignID(doc, ids[i]); err != nil {
+			if err := core.AssignID(doc, ids[i]); err != nil {
 				return nil, err
 			}
 		}
@@ -393,137 +390,94 @@ func (pg Postgres) InsertMany(ctx context.Context, documents []any) ([]any, erro
 	return ids, nil
 }
 
-func assignID(document any, id any) (any, error) {
-	val := reflect.ValueOf(document)
-	if val.Kind() != reflect.Ptr {
-		return document, nil
-		// first make it backward compatible
-		// return id, fmt.Errorf("document must be a pointer to a struct")
-	}
-
-	valElem := val.Elem()
-	if valElem.Kind() != reflect.Struct {
-		return id, fmt.Errorf("document must be a pointer to a struct")
-	}
-
-	var idField = fetchIDField(valElem)
-	if !idField.CanSet() {
-		return id, fmt.Errorf("ID field is not settable")
-	}
-
-	idVal := reflect.ValueOf(id)
-	if idField.Kind() == reflect.Ptr {
-		elemType := idField.Type().Elem()
-		if !idVal.Type().AssignableTo(elemType) && !idVal.Type().ConvertibleTo(elemType) {
-			return id, fmt.Errorf("ID type %s cannot be assigned to pointer element type %s", idVal.Type(), elemType)
-		}
-		idValPtr := reflect.New(elemType)
-		if idVal.Type().AssignableTo(elemType) {
-			idValPtr.Elem().Set(idVal)
-		} else {
-			idValPtr.Elem().Set(idVal.Convert(elemType))
-		}
-		idField.Set(idValPtr)
-	} else {
-		if !idVal.Type().AssignableTo(idField.Type()) {
-			if idVal.Type().ConvertibleTo(idField.Type()) {
-				idVal = idVal.Convert(idField.Type())
-			} else {
-				return id, fmt.Errorf("ID type %s cannot be assigned or converted to field type %s", idVal.Type(), idField.Type())
-			}
-		}
-		idField.Set(idVal)
-	}
-
-	return id, nil
-}
-
-func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
-	for i := 0; i < valElem.NumField(); i++ {
-		field := valElem.Type().Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag != "" {
-			dbTag = strings.Split(dbTag, ",")[0]
-		}
-		jsonTag := field.Tag.Get("json")
-		if dbTag == "id" || jsonTag == "id" {
-			idField = valElem.Field(i)
-			return idField
-		}
-	}
-
-	idFieldNames := []string{"ID", "Id"}
-	for _, name := range idFieldNames {
-		idField = valElem.FieldByName(name)
-		if idField.IsValid() {
-			return idField
-		}
-	}
-	return
-}
-
+// UpdateOne updates one matching row and reports ErrNotFound when none did.
 func (pg Postgres) UpdateOne(ctx context.Context, document any) error {
-	if err := core.RunBeforeUpdate(ctx, document); err != nil {
-		return err
-	}
-	if pg.statement.ShouldValidate() {
-		if err := validation.Validate(document); err != nil {
-			return err
-		}
-	}
-	pg.statement.GenerateWhereClause()
-	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
-		return err
-	}
-
-	query := pg.statement.GenerateUpdateQuery(document)
-	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
+	rows, err := pg.updateRows(ctx, document, true)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+	if rows == 0 {
 		return dberr.ErrNotFound
 	}
 	return core.RunAfterUpdate(ctx, document)
 }
 
-func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
-	if len(filter) > 0 {
-		pg = pg.detectSoftDelete(filter[0])
-		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
-			return err
+// UpdateMany updates every matching row and returns how many changed.
+func (pg Postgres) UpdateMany(ctx context.Context, document any) (int64, error) {
+	rows, err := pg.updateRows(ctx, document, false)
+	if err != nil || rows == 0 {
+		return rows, err
+	}
+	return rows, core.RunAfterUpdate(ctx, document)
+}
+
+// updateRows runs an UPDATE built from document and returns the rows it
+// changed. one caps the statement at a single row.
+func (pg Postgres) updateRows(ctx context.Context, document any, one bool) (int64, error) {
+	if err := core.RunBeforeUpdate(ctx, document); err != nil {
+		return 0, err
+	}
+	if pg.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return 0, err
 		}
 	}
-	pg.statement.GenerateWhereClause(filter...)
+	pg.statement.GenerateWhereClause()
 	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
-		return err
+		return 0, err
 	}
 
-	var query string
-	if pg.statement.IsSoftDelete() {
-		query = pg.statement.GenerateSoftDeleteQuery()
-	} else {
-		query = pg.statement.GenerateDeleteQuery()
-	}
-	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
+	return pg.execWrite(ctx, pg.statement.UpdateQuery(document, one))
+}
+
+// DeleteOne deletes one matching row and reports ErrNotFound when none did.
+func (pg Postgres) DeleteOne(ctx context.Context, filter ...any) error {
+	rows, err := pg.deleteRows(ctx, true, filter...)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+	if rows == 0 {
 		return dberr.ErrNotFound
 	}
 	if len(filter) > 0 {
 		return core.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
+}
+
+// DeleteMany deletes every matching row and returns how many were removed.
+func (pg Postgres) DeleteMany(ctx context.Context, filter ...any) (int64, error) {
+	rows, err := pg.deleteRows(ctx, false, filter...)
+	if err != nil || rows == 0 || len(filter) == 0 {
+		return rows, err
+	}
+	return rows, core.RunAfterDelete(ctx, filter[0])
+}
+
+// deleteRows runs a DELETE, or the soft-delete UPDATE the schema calls for, and
+// returns the rows it removed. one caps the statement at a single row.
+func (pg Postgres) deleteRows(ctx context.Context, one bool, filter ...any) (int64, error) {
+	if len(filter) > 0 {
+		pg = pg.detectSoftDelete(filter[0])
+		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
+			return 0, err
+		}
+	}
+	pg.statement.GenerateWhereClause(filter...)
+	if err := pg.statement.CheckWhereClauseNotEmpty(); err != nil {
+		return 0, err
+	}
+
+	return pg.execWrite(ctx, pg.statement.DeleteQuery(one))
+}
+
+// execWrite runs query and returns the number of rows it affected.
+func (pg Postgres) execWrite(ctx context.Context, query string) (int64, error) {
+	result, err := pg.statement.ExecuteWriteQuery(ctx, pg.conn, pg.tx, query, pg.observer, pg.cache)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (pg Postgres) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
@@ -542,7 +496,7 @@ func (pg Postgres) Exec(ctx context.Context, query string, args ...any) (sql.Res
 
 func (pg Postgres) Sync(ctx context.Context, tables ...any) error {
 	for _, table := range tables {
-		if err := lib.SyncTable(ctx, pg.conn, table); err != nil {
+		if err := lib.SyncTable(ctx, lib.Postgres, pg.conn, table); err != nil {
 			return err
 		}
 		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
@@ -565,5 +519,5 @@ func (pg Postgres) Close() error {
 }
 
 func (pg Postgres) cleanup() {
-	pg.statement = lib.Statement{}
+	pg.statement = lib.NewStatement(lib.Postgres)
 }

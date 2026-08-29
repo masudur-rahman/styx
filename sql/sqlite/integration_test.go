@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/masudur-rahman/styx/v2/dberr"
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/sqlite"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -30,7 +30,7 @@ type Post struct {
 }
 
 func setupDB(t *testing.T) sql.Engine {
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 
 	db := sqlite.NewSQLite(conn)
@@ -130,7 +130,7 @@ type Event struct {
 
 func TestIntegration_JSONFields(t *testing.T) {
 	ctx := context.Background()
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 	db := sqlite.NewSQLite(conn)
 	assert.NoError(t, db.Sync(ctx, Event{}))
@@ -208,7 +208,7 @@ type widget struct {
 
 func TestIgnoreTag_notPersisted(t *testing.T) {
 	ctx := context.Background()
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 	db := sqlite.NewSQLite(conn)
 
@@ -236,7 +236,7 @@ type account struct {
 
 func TestNotNull_rejectsMissingValue(t *testing.T) {
 	ctx := context.Background()
-	conn, err := lib.GetSQLiteConnection(":memory:")
+	conn, err := sqlite.GetSQLiteConnection(":memory:")
 	assert.NoError(t, err)
 	db := sqlite.NewSQLite(conn)
 	assert.NoError(t, db.Sync(ctx, account{}))
@@ -248,4 +248,203 @@ func TestNotNull_rejectsMissingValue(t *testing.T) {
 	// A populated NOT NULL column inserts fine.
 	_, err = db.Table("account").InsertOne(ctx, &account{Name: "acme"})
 	assert.NoError(t, err)
+}
+
+// seedAges inserts one user per age, so a filter on the age matches as many
+// rows as the age repeats.
+func seedAges(t *testing.T, db sql.Engine, ages ...int) {
+	t.Helper()
+	ctx := context.Background()
+	for i, age := range ages {
+		_, err := db.Table("user").InsertOne(ctx, &User{
+			Name:  fmt.Sprintf("user%d", i),
+			Email: fmt.Sprintf("user%d@e.c", i),
+			Age:   age,
+		})
+		assert.NoError(t, err)
+	}
+}
+
+// countAge returns how many live rows carry the given age.
+func countAge(t *testing.T, db sql.Engine, age int) int64 {
+	t.Helper()
+	n, err := db.Table("user").Where("age = ?", age).Count(context.Background())
+	assert.NoError(t, err)
+	return n
+}
+
+// TestUpdateOne_changesOnlyOneMatch is the behaviour this pair exists for: a
+// filter matching three rows used to update all three.
+func TestUpdateOne_changesOnlyOneMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	err := db.Table("user").Where("age = ?", 30).UpdateOne(ctx, User{Age: 31})
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(2), countAge(t, db, 30))
+	assert.Equal(t, int64(1), countAge(t, db, 31))
+	assert.Equal(t, int64(1), countAge(t, db, 40), "rows outside the filter are untouched")
+}
+
+func TestUpdateMany_changesEveryMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	changed, err := db.Table("user").Where("age = ?", 30).UpdateMany(ctx, User{Age: 31})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), changed)
+
+	assert.Equal(t, int64(0), countAge(t, db, 30))
+	assert.Equal(t, int64(3), countAge(t, db, 31))
+	assert.Equal(t, int64(1), countAge(t, db, 40), "rows outside the filter are untouched")
+}
+
+func TestUpdateMany_noMatchReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	changed, err := db.Table("user").Where("age = ?", 99).UpdateMany(ctx, User{Age: 31})
+	assert.NoError(t, err, "matching nothing is not an error for a bulk update")
+	assert.Equal(t, int64(0), changed)
+}
+
+// TestDeleteOne_removesOnlyOneMatch covers the soft-delete path, since User
+// carries an archive column.
+func TestDeleteOne_removesOnlyOneMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	err := db.Table("user").DeleteOne(ctx, User{Age: 30})
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(2), countAge(t, db, 30))
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(4), all, "soft delete marks the row, it does not remove it")
+}
+
+func TestDeleteMany_removesEveryMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	removed, err := db.Table("user").DeleteMany(ctx, User{Age: 30})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), removed)
+
+	assert.Equal(t, int64(0), countAge(t, db, 30))
+	assert.Equal(t, int64(1), countAge(t, db, 40), "rows outside the filter are untouched")
+}
+
+func TestDeleteMany_noMatchReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	removed, err := db.Table("user").DeleteMany(ctx, User{Age: 99})
+	assert.NoError(t, err, "matching nothing is not an error for a bulk delete")
+	assert.Equal(t, int64(0), removed)
+}
+
+// TestDeleteOne_softDeletesWithoutAFilterDocument covers a path that used to
+// destroy data: with no filter document the delete never learned the archive
+// column, so an ID() delete removed the row outright from a soft-delete table.
+func TestDeleteOne_softDeletesWithoutAFilterDocument(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+
+	live, err := db.Table("user").Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), live, "the row is hidden from ordinary reads")
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), all, "but it is still there, marked deleted")
+}
+
+// TestRestore_withoutAFilterDocument is the inverse: Restore by ID must find the
+// archive column the same way.
+func TestRestore_withoutAFilterDocument(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+	assert.NoError(t, db.Table("user").ID(1).Restore(ctx))
+
+	live, err := db.Table("user").Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), live)
+}
+
+// TestForceDelete_stillRemovesTheRow guards the escape hatch: the registry
+// fallback must not turn a forced delete back into a soft one.
+func TestForceDelete_stillRemovesTheRow(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).ForceDelete(ctx))
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), all, "force delete removes the row for real")
+}
+
+// TestDeleteOne_skipsRowsAlreadyDeleted guards the interaction between the
+// single-row cap and soft delete: the cap orders by primary key, so without a
+// guard the lowest id wins even when it is already deleted, and the delete
+// reports success having changed nothing anyone can see.
+func TestDeleteOne_skipsRowsAlreadyDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30)
+
+	// Delete the lowest id, the row the cap would otherwise reach first.
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+	assert.Equal(t, int64(2), countAge(t, db, 30))
+
+	assert.NoError(t, db.Table("user").DeleteOne(ctx, User{Age: 30}))
+	assert.Equal(t, int64(1), countAge(t, db, 30), "a live row must be the one deleted")
+}
+
+func TestDeleteOne_notFoundWhenEveryMatchIsAlreadyDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").DeleteOne(ctx, User{Age: 30}))
+
+	err := db.Table("user").DeleteOne(ctx, User{Age: 30})
+	assert.ErrorIs(t, err, dberr.ErrNotFound, "nothing live was left to delete")
+}
+
+func TestDeleteMany_countsOnlyLiveRows(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+
+	removed, err := db.Table("user").DeleteMany(ctx, User{Age: 30})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), removed, "the row already deleted is not counted again")
+}
+
+func TestRestore_notFoundWhenNothingIsDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	err := db.Table("user").ID(1).Restore(ctx)
+	assert.ErrorIs(t, err, dberr.ErrNotFound, "the row was never deleted")
 }

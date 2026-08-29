@@ -84,9 +84,10 @@ type Engine interface {
 
 	// WithDeleted includes soft-deleted rows in query results.
 	WithDeleted() Engine
-	// ForceDelete permanently deletes matching rows, bypassing soft delete.
+	// ForceDelete permanently deletes one matching row, bypassing soft delete.
 	ForceDelete(ctx context.Context, filter ...any) error
-	// Restore clears the soft-delete marker on matching rows.
+	// Restore clears the soft-delete marker on one matching row, the inverse of
+	// a soft DeleteOne.
 	Restore(ctx context.Context, filter ...any) error
 	// EnableValidation turns struct tag validation on or off for write operations.
 	EnableValidation(enable bool) Engine
@@ -105,11 +106,22 @@ type Engine interface {
 	// InsertMany inserts multiple documents and returns their generated primary keys.
 	InsertMany(ctx context.Context, documents []any) ([]any, error)
 
-	// UpdateOne updates the row identified by ID() with non-zero fields from document.
+	// UpdateOne updates one matching row with non-zero fields from document,
+	// and returns ErrNotFound when nothing matched. Chained conditions that
+	// match several rows still change only one of them; use UpdateMany to
+	// change all of them.
 	UpdateOne(ctx context.Context, document any) error
+	// UpdateMany updates every matching row with non-zero fields from document
+	// and returns how many changed. Matching nothing returns (0, nil).
+	UpdateMany(ctx context.Context, document any) (int64, error)
 
-	// DeleteOne deletes a single matching row (soft or hard delete depending on schema).
+	// DeleteOne deletes one matching row, soft or hard depending on the schema,
+	// and returns ErrNotFound when nothing matched.
 	DeleteOne(ctx context.Context, filter ...any) error
+	// DeleteMany deletes every matching row, soft or hard depending on the
+	// schema, and returns how many were removed. Matching nothing returns
+	// (0, nil).
+	DeleteMany(ctx context.Context, filter ...any) (int64, error)
 
 	// Query executes a raw SQL query and returns the result rows.
 	Query(ctx context.Context, query string, args ...any) (*sql.Rows, error)

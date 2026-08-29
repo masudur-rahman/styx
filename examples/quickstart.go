@@ -6,7 +6,6 @@ import (
 
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/sqlite"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
 )
 
 type User struct {
@@ -21,7 +20,7 @@ func main() {
 	ctx := context.Background()
 
 	// Create sqlite connection
-	conn, _ := lib.GetSQLiteConnection("test.db")
+	conn, _ := sqlite.GetSQLiteConnection("test.db")
 
 	// Start a database engine
 	var db sql.Engine
@@ -42,11 +41,15 @@ func main() {
 	db.FindOne(ctx, &user, User{Name: "masud"})
 	db.Columns("name", "email").FindOne(ctx, &user, User{Name: "masud"}) // fetch only name, email columns
 
-	// Update
+	// Update — UpdateOne changes one row even when the filter matches more
 	db.ID(user.ID).UpdateOne(ctx, User{Email: "test@example.com"})
 	db.Where("email=?", "test@example.com").UpdateOne(ctx, User{FullName: "Test User"})
 
+	// ...UpdateMany changes all of them, and reports how many
+	db.Where("email=?", "test@example.com").UpdateMany(ctx, User{FullName: "Test User"})
+
 	// Delete
-	db.ID(1).DeleteOne(ctx)                // delete by id
-	db.DeleteOne(ctx, User{Name: "masud"}) // delete using filter
+	db.ID(1).DeleteOne(ctx)                 // delete one by id
+	db.DeleteOne(ctx, User{Name: "masud"})  // delete one using a filter
+	db.DeleteMany(ctx, User{Name: "masud"}) // delete every match
 }

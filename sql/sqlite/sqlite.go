@@ -3,14 +3,11 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"reflect"
-	"strings"
 
 	"github.com/masudur-rahman/styx/v2/dberr"
 	isql "github.com/masudur-rahman/styx/v2/sql"
 	core "github.com/masudur-rahman/styx/v2/sql/internal/core"
-	"github.com/masudur-rahman/styx/v2/sql/sqlite/lib"
+	lib "github.com/masudur-rahman/styx/v2/sql/internal/lib"
 	"github.com/masudur-rahman/styx/v2/validation"
 
 	_ "modernc.org/sqlite"
@@ -28,7 +25,7 @@ type SQLite struct {
 // WithStmtCache configure cross-cutting behaviour.
 func NewSQLite(conn *sql.DB, opts ...isql.Option) SQLite {
 	cfg := isql.BuildConfig(opts...)
-	sq := SQLite{conn: conn, observer: cfg.Observer}
+	sq := SQLite{conn: conn, observer: cfg.Observer, statement: lib.NewStatement(lib.SQLite)}
 	if cfg.StmtCache {
 		sq.cache = core.NewStmtCache()
 	}
@@ -189,7 +186,7 @@ func (sq SQLite) preload(ctx context.Context, docs any) error {
 		return nil
 	}
 	base := sq
-	base.statement = lib.Statement{}
+	base.statement = lib.NewStatement(lib.SQLite)
 	return core.PreloadRelations(ctx, base, docs, preloads)
 }
 
@@ -349,7 +346,7 @@ func (sq SQLite) InsertOne(ctx context.Context, document any) (id any, err error
 	if err != nil {
 		return nil, err
 	}
-	if _, err = assignID(document, id); err != nil {
+	if err = core.AssignID(document, id); err != nil {
 		return nil, err
 	}
 	if err = core.RunAfterCreate(ctx, document); err != nil {
@@ -383,7 +380,7 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 
 	for i, doc := range documents {
 		if i < len(ids) {
-			if _, err := assignID(doc, ids[i]); err != nil {
+			if err := core.AssignID(doc, ids[i]); err != nil {
 				return nil, err
 			}
 		}
@@ -395,137 +392,94 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 	return ids, nil
 }
 
-func assignID(document any, id any) (any, error) {
-	val := reflect.ValueOf(document)
-	if val.Kind() != reflect.Ptr {
-		return document, nil
-		// first make it backward compatible
-		// return id, fmt.Errorf("document must be a pointer to a struct")
-	}
-
-	valElem := val.Elem()
-	if valElem.Kind() != reflect.Struct {
-		return id, fmt.Errorf("document must be a pointer to a struct")
-	}
-
-	var idField = fetchIDField(valElem)
-	if !idField.CanSet() {
-		return id, fmt.Errorf("ID field is not settable")
-	}
-
-	idVal := reflect.ValueOf(id)
-	if idField.Kind() == reflect.Ptr {
-		elemType := idField.Type().Elem()
-		if !idVal.Type().AssignableTo(elemType) && !idVal.Type().ConvertibleTo(elemType) {
-			return id, fmt.Errorf("ID type %s cannot be assigned to pointer element type %s", idVal.Type(), elemType)
-		}
-		idValPtr := reflect.New(elemType)
-		if idVal.Type().AssignableTo(elemType) {
-			idValPtr.Elem().Set(idVal)
-		} else {
-			idValPtr.Elem().Set(idVal.Convert(elemType))
-		}
-		idField.Set(idValPtr)
-	} else {
-		if !idVal.Type().AssignableTo(idField.Type()) {
-			if idVal.Type().ConvertibleTo(idField.Type()) {
-				idVal = idVal.Convert(idField.Type())
-			} else {
-				return id, fmt.Errorf("ID type %s cannot be assigned or converted to field type %s", idVal.Type(), idField.Type())
-			}
-		}
-		idField.Set(idVal)
-	}
-
-	return id, nil
-}
-
-func fetchIDField(valElem reflect.Value) (idField reflect.Value) {
-	for i := 0; i < valElem.NumField(); i++ {
-		field := valElem.Type().Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag != "" {
-			dbTag = strings.Split(dbTag, ",")[0]
-		}
-		jsonTag := field.Tag.Get("json")
-		if dbTag == "id" || jsonTag == "id" {
-			idField = valElem.Field(i)
-			return idField
-		}
-	}
-
-	idFieldNames := []string{"ID", "Id"}
-	for _, name := range idFieldNames {
-		idField = valElem.FieldByName(name)
-		if idField.IsValid() {
-			return idField
-		}
-	}
-	return
-}
-
+// UpdateOne updates one matching row and reports ErrNotFound when none did.
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
-	if err := core.RunBeforeUpdate(ctx, document); err != nil {
-		return err
-	}
-	if sq.statement.ShouldValidate() {
-		if err := validation.Validate(document); err != nil {
-			return err
-		}
-	}
-	sq.statement.GenerateWhereClause()
-	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
-		return err
-	}
-
-	query := sq.statement.GenerateUpdateQuery(document)
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	rows, err := sq.updateRows(ctx, document, true)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+	if rows == 0 {
 		return dberr.ErrNotFound
 	}
 	return core.RunAfterUpdate(ctx, document)
 }
 
-func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
-	if len(filter) > 0 {
-		sq = sq.detectSoftDelete(filter[0])
-		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
-			return err
+// UpdateMany updates every matching row and returns how many changed.
+func (sq SQLite) UpdateMany(ctx context.Context, document any) (int64, error) {
+	rows, err := sq.updateRows(ctx, document, false)
+	if err != nil || rows == 0 {
+		return rows, err
+	}
+	return rows, core.RunAfterUpdate(ctx, document)
+}
+
+// updateRows runs an UPDATE built from document and returns the rows it
+// changed. one caps the statement at a single row.
+func (sq SQLite) updateRows(ctx context.Context, document any, one bool) (int64, error) {
+	if err := core.RunBeforeUpdate(ctx, document); err != nil {
+		return 0, err
+	}
+	if sq.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return 0, err
 		}
 	}
-	sq.statement.GenerateWhereClause(filter...)
+	sq.statement.GenerateWhereClause()
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
-		return err
+		return 0, err
 	}
 
-	var query string
-	if sq.statement.IsSoftDelete() {
-		query = sq.statement.GenerateSoftDeleteQuery()
-	} else {
-		query = sq.statement.GenerateDeleteQuery()
-	}
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	return sq.execWrite(ctx, sq.statement.UpdateQuery(document, one))
+}
+
+// DeleteOne deletes one matching row and reports ErrNotFound when none did.
+func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
+	rows, err := sq.deleteRows(ctx, true, filter...)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+	if rows == 0 {
 		return dberr.ErrNotFound
 	}
 	if len(filter) > 0 {
 		return core.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
+}
+
+// DeleteMany deletes every matching row and returns how many were removed.
+func (sq SQLite) DeleteMany(ctx context.Context, filter ...any) (int64, error) {
+	rows, err := sq.deleteRows(ctx, false, filter...)
+	if err != nil || rows == 0 || len(filter) == 0 {
+		return rows, err
+	}
+	return rows, core.RunAfterDelete(ctx, filter[0])
+}
+
+// deleteRows runs a DELETE, or the soft-delete UPDATE the schema calls for, and
+// returns the rows it removed. one caps the statement at a single row.
+func (sq SQLite) deleteRows(ctx context.Context, one bool, filter ...any) (int64, error) {
+	if len(filter) > 0 {
+		sq = sq.detectSoftDelete(filter[0])
+		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
+			return 0, err
+		}
+	}
+	sq.statement.GenerateWhereClause(filter...)
+	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
+		return 0, err
+	}
+
+	return sq.execWrite(ctx, sq.statement.DeleteQuery(one))
+}
+
+// execWrite runs query and returns the number of rows it affected.
+func (sq SQLite) execWrite(ctx context.Context, query string) (int64, error) {
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (sq SQLite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
@@ -544,7 +498,7 @@ func (sq SQLite) Exec(ctx context.Context, query string, args ...any) (sql.Resul
 
 func (sq SQLite) Sync(ctx context.Context, tables ...any) error {
 	for _, table := range tables {
-		if err := lib.SyncTable(ctx, sq.conn, table); err != nil {
+		if err := lib.SyncTable(ctx, lib.SQLite, sq.conn, table); err != nil {
 			return err
 		}
 		core.RegisterSoftDeleteColumn(core.GetTableName(table), core.ExtractSoftDeleteColumn(table))
@@ -567,5 +521,5 @@ func (sq SQLite) Stats() sql.DBStats {
 }
 
 func (sq SQLite) cleanup() {
-	sq.statement = lib.Statement{}
+	sq.statement = lib.NewStatement(lib.SQLite)
 }

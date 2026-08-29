@@ -3,12 +3,12 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/masudur-rahman/styx/v2/sql"
 	"github.com/masudur-rahman/styx/v2/sql/postgres"
-	"github.com/masudur-rahman/styx/v2/sql/postgres/lib"
 
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -23,20 +23,59 @@ type TestUser struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
+// requiredEnv names the variable CI sets so that a database it provisioned can
+// never be quietly skipped past.
+const requiredEnv = "STYX_POSTGRES_REQUIRED"
+
+// initializeDB returns an engine with the test table synced, or skips the test
+// when no database is reachable.
+//
+// These tests talk to a real Postgres rather than a mock, so a contributor
+// without one running — or a containerised `make test`, which cannot see the
+// host's — would otherwise get a wall of dial failures. Syncing here rather
+// than in one test keeps each test able to run on its own.
 func initializeDB(t *testing.T) (sql.Engine, func() error) {
-	cfg := lib.PostgresConfig{
+	t.Helper()
+
+	cfg := postgres.PostgresConfig{
 		Name:     "test",
-		Host:     "localhost",
-		Port:     "5432",
+		Host:     envOr("POSTGRES_HOST", "localhost"),
+		Port:     envOr("POSTGRES_PORT", "5432"),
 		User:     "postgres",
 		Password: "postgres",
 		SSLMode:  "disable",
 	}
 
-	conn, err := lib.GetPostgresConnection(cfg)
-	require.Nil(t, err)
+	conn, err := postgres.GetPostgresConnection(cfg)
+	if err != nil {
+		if os.Getenv(requiredEnv) != "" {
+			require.NoError(t, err, "%s is set, so a database was expected", requiredEnv)
+		}
+		t.Skipf("postgres unreachable at %s:%s, skipping: %v", cfg.Host, cfg.Port, err)
+	}
 
-	return postgres.NewPostgres(conn).ShowSQL(true), conn.Close
+	db := postgres.NewPostgres(conn).ShowSQL(true)
+	require.NoError(t, db.Sync(context.Background(), TestUser{}))
+
+	return db, conn.Close
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// newTestUser returns a user whose unique columns cannot collide with another
+// test, or with a row left behind by an earlier run.
+func newTestUser(name string) TestUser {
+	suffix := xid.New().String()
+	return TestUser{
+		Name:     fmt.Sprintf("%s-%s", name, suffix),
+		FullName: "Test Name",
+		Email:    fmt.Sprintf("%s%s@test.test", name, suffix),
+	}
 }
 
 func TestPostgres_Sync(t *testing.T) {
@@ -63,9 +102,14 @@ func TestPostgres_FindOne(t *testing.T) {
 	//db = db.Table("test_user")
 
 	t.Run("find user by id", func(t *testing.T) {
-		has, err := db.ID(1).FindOne(ctx, &user)
+		seeded := newTestUser("find")
+		id, err := db.InsertOne(ctx, &seeded)
+		require.NoError(t, err)
+
+		has, err := db.ID(id).FindOne(ctx, &user)
 		assert.Nil(t, err)
 		assert.True(t, has)
+		assert.Equal(t, seeded.Name, user.Name)
 	})
 
 	t.Run("find user by filter", func(t *testing.T) {

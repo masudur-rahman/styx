@@ -16,6 +16,8 @@ var rawMessageType = reflect.TypeOf(json.RawMessage{})
 
 var timeType = reflect.TypeOf(time.Time{})
 
+var scannerType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
+
 var (
 	fieldMapCache  sync.Map // map[reflect.Type]map[string]int (index of field)
 	tableNameCache sync.Map // map[reflect.Type]string
@@ -55,77 +57,66 @@ func GetTableName(table interface{}) string {
 	return tableName
 }
 
-// GetDBFieldMap returns a map of database column names to field indices for a struct, with caching.
-func GetDBFieldMap(doc any) map[string]int {
+// GetDBFieldMap maps each column name to the field that backs it, with caching.
+// Columns promoted out of an embedded struct carry a multi-element index path.
+func GetDBFieldMap(doc any) map[string]FieldRef {
 	t := reflect.TypeOf(doc)
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
 
 	if cache, ok := fieldMapCache.Load(t); ok {
-		return cache.(map[string]int)
+		return cache.(map[string]FieldRef)
 	}
 
-	fieldMap := make(map[string]int)
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if !field.IsExported() {
-			continue
-		}
-		if IsIgnoredField(field) {
-			continue
-		}
-
-		colName := field.Name
-		if dbTag := field.Tag.Get("db"); dbTag != "" {
-			tagParts := strings.Split(dbTag, ",")
-			if tagParts[0] != "" {
-				colName = tagParts[0]
-			}
-		}
-		fieldMap[strcase.ToSnake(colName)] = i
+	fieldMap := make(map[string]FieldRef)
+	for _, f := range WalkFields(t) {
+		fieldMap[GetFieldName(f.StructField)] = f
 	}
 
 	fieldMapCache.Store(t, fieldMap)
 	return fieldMap
 }
 
-// GetPKColumn returns the primary key column name for a struct, with caching.
+// DefaultPKColumn is the primary key column assumed for a struct that tags none.
+const DefaultPKColumn = "id"
+
+// GetPKColumn returns the primary key column name for a struct, falling back to
+// DefaultPKColumn when no field carries a pk tag.
 func GetPKColumn(table any) string {
+	if col, ok := DeclaredPKColumn(table); ok {
+		return col
+	}
+	return DefaultPKColumn
+}
+
+// DeclaredPKColumn returns the column a pk tag names, and whether one exists.
+//
+// Callers that put the column into SQL use this rather than GetPKColumn: its
+// fallback is a guess, and naming a column the table may not have turns a
+// working statement into a syntax error.
+func DeclaredPKColumn(table any) (string, bool) {
 	t := reflect.TypeOf(table)
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
 
 	if col, ok := pkColumnCache.Load(t); ok {
-		return col.(string)
+		return col.(string), col.(string) != ""
 	}
 
-	pkCol := "id" // default
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
+	var pkCol string
+	for _, f := range WalkFields(t) {
+		tag, _ := ParseDBTag(f.StructField)
+		if !tag.Has(TokenPK) {
 			continue
 		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) >= 2 {
-			for _, part := range strings.Fields(parts[1]) {
-				if strings.ToUpper(part) == "PK" {
-					if parts[0] != "" {
-						pkCol = parts[0]
-					} else {
-						pkCol = strcase.ToSnake(field.Name)
-					}
-					goto found
-				}
-			}
-		}
+		pkCol = GetFieldName(f.StructField)
+		break
 	}
 
-found:
 	pkColumnCache.Store(t, pkCol)
-	return pkCol
+	return pkCol, pkCol != ""
 }
 
 var softDeleteCache sync.Map
@@ -142,28 +133,15 @@ func ExtractSoftDeleteColumn(table any) string {
 	}
 
 	softDeleteCol := ""
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		dbTag := field.Tag.Get("db")
-		if dbTag == "" {
+	for _, f := range WalkFields(t) {
+		tag, _ := ParseDBTag(f.StructField)
+		if !tag.Has(TokenArchive) {
 			continue
 		}
-		parts := strings.SplitN(dbTag, ",", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		for _, part := range strings.Fields(parts[1]) {
-			if strings.ToLower(part) == "archive" {
-				softDeleteCol = parts[0]
-				if softDeleteCol == "" {
-					softDeleteCol = strcase.ToSnake(field.Name)
-				}
-				goto found
-			}
-		}
+		softDeleteCol = GetFieldName(f.StructField)
+		break
 	}
 
-found:
 	softDeleteCache.Store(t, softDeleteCol)
 	return softDeleteCol
 }
@@ -171,49 +149,20 @@ found:
 // GetFieldName returns the database column name for a struct field.
 func GetFieldName(field reflect.StructField) string {
 	fieldName := field.Name
-	if dbTag := field.Tag.Get("db"); dbTag != "" {
-		colName := strings.Split(dbTag, ",")[0]
-		if colName != "" {
-			fieldName = colName
-		}
+	if tag, _ := ParseDBTag(field); tag.Name != "" {
+		fieldName = tag.Name
 	}
 	return strcase.ToSnake(fieldName)
 }
 
 // HasReqTag checks if a struct field has the "req" option in its db tag.
 func HasReqTag(field reflect.StructField) bool {
-	dbTag := field.Tag.Get("db")
-	if dbTag == "" {
-		return false
-	}
-	parts := strings.SplitN(dbTag, ",", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	for _, part := range strings.Fields(parts[1]) {
-		if strings.ToUpper(part) == "REQ" {
-			return true
-		}
-	}
-	return false
+	return HasDBToken(field, TokenRequired)
 }
 
 // HasJSONTag checks if a struct field has the "json" option in its db tag.
 func HasJSONTag(field reflect.StructField) bool {
-	dbTag := field.Tag.Get("db")
-	if dbTag == "" {
-		return false
-	}
-	parts := strings.SplitN(dbTag, ",", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	for _, part := range strings.Fields(parts[1]) {
-		if strings.ToUpper(part) == "JSON" {
-			return true
-		}
-	}
-	return false
+	return HasDBToken(field, TokenJSON)
 }
 
 // IsJSONField reports whether a struct field is stored as JSON in the
@@ -346,16 +295,74 @@ func ScanRow(rows *sql.Rows, doc any) error {
 			continue
 		}
 
-		fieldIdx, ok := fieldMap[col]
+		ref, ok := fieldMap[col]
 		if !ok {
 			continue
 		}
 
-		if err := setFieldValue(val.Field(fieldIdx), val.Type().Field(fieldIdx), rawVal); err != nil {
+		if err := setFieldValue(ref.Value(val), ref.StructField, rawVal); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// scanIntoField hydrates a field whose type implements sql.Scanner, allocating
+// first when the field is a pointer. It reports whether it handled the field so
+// callers can fall through to the ordinary conversion rules.
+//
+// Without this, a Scanner field is left at its zero value with no error
+// reported, because the driver's raw value is neither assignable nor
+// convertible to it: lib/pq returns a string for a uuid column, and uuid.UUID
+// is [16]byte.
+func scanIntoField(field reflect.Value, sf reflect.StructField, rawVal any) (bool, error) {
+	var target reflect.Value
+	switch {
+	case field.Addr().Type().Implements(scannerType):
+		target = field.Addr()
+	case field.Kind() == reflect.Ptr && field.Type().Implements(scannerType):
+		target = reflect.New(field.Type().Elem())
+	default:
+		return false, nil
+	}
+
+	if err := target.Interface().(sql.Scanner).Scan(rawVal); err != nil {
+		return true, fmt.Errorf("scanning into field %s: %w", sf.Name, err)
+	}
+
+	if field.Kind() == reflect.Ptr {
+		field.Set(target)
+	}
+	return true, nil
+}
+
+// setPointerField allocates and assigns into a pointer field, mirroring the
+// assignable/convertible/time.Time rules used for non-pointer fields. Values it
+// cannot map are left as a nil pointer.
+func setPointerField(field, v reflect.Value, rawVal any) {
+	elemType := field.Type().Elem()
+	newVal := reflect.New(elemType)
+
+	switch {
+	case v.Type().AssignableTo(elemType):
+		newVal.Elem().Set(v)
+	case v.Type().ConvertibleTo(elemType):
+		newVal.Elem().Set(v.Convert(elemType))
+	case elemType == timeType:
+		s, ok := rawVal.(string)
+		if !ok {
+			return
+		}
+		t, err := parseTime(s)
+		if err != nil {
+			return
+		}
+		newVal.Elem().Set(reflect.ValueOf(t))
+	default:
+		return
+	}
+
+	field.Set(newVal)
 }
 
 // setFieldValue assigns a scanned raw DB value onto a struct field, handling
@@ -369,30 +376,16 @@ func setFieldValue(field reflect.Value, sf reflect.StructField, rawVal any) erro
 		return setJSONField(field, rawVal)
 	}
 
+	if handled, err := scanIntoField(field, sf, rawVal); handled {
+		return err
+	}
+
 	v := reflect.ValueOf(rawVal)
 	switch {
 	case v.Type().AssignableTo(field.Type()):
 		field.Set(v)
 	case field.Kind() == reflect.Ptr:
-		elemType := field.Type().Elem()
-		switch {
-		case v.Type().AssignableTo(elemType):
-			newVal := reflect.New(elemType)
-			newVal.Elem().Set(v)
-			field.Set(newVal)
-		case v.Type().ConvertibleTo(elemType):
-			newVal := reflect.New(elemType)
-			newVal.Elem().Set(v.Convert(elemType))
-			field.Set(newVal)
-		case elemType == timeType:
-			if s, ok := rawVal.(string); ok {
-				if t, err := parseTime(s); err == nil {
-					newVal := reflect.New(elemType)
-					newVal.Elem().Set(reflect.ValueOf(t))
-					field.Set(newVal)
-				}
-			}
-		}
+		setPointerField(field, v, rawVal)
 	case field.Type() == timeType:
 		if s, ok := rawVal.(string); ok {
 			if t, err := parseTime(s); err == nil {
@@ -435,11 +428,11 @@ func setNestedField(parent reflect.Value, prefix, inner string, rawVal any) erro
 	}
 
 	innerMap := GetDBFieldMap(target.Addr().Interface())
-	innerIdx, ok := innerMap[inner]
+	ref, ok := innerMap[inner]
 	if !ok {
 		return nil
 	}
-	return setFieldValue(target.Field(innerIdx), target.Type().Field(innerIdx), rawVal)
+	return setFieldValue(ref.Value(target), ref.StructField, rawVal)
 }
 
 // nestedFieldIndex returns the index of a struct or pointer-to-struct field on t

@@ -1,0 +1,144 @@
+## read/plain
+sql:  SELECT * FROM "users"
+args: []interface {}(nil)
+
+## read/by-id
+sql:  SELECT * FROM "users"
+args: []interface {}(nil)
+
+## read/where
+sql:  SELECT * FROM "users" WHERE age > ? AND city = ?
+args: []interface {}{21, "dhaka"}
+
+## read/or
+sql:  SELECT * FROM "users" WHERE age > ? OR vip = ?
+args: []interface {}{21, true}
+
+## read/in
+sql:  SELECT * FROM "users" WHERE status IN (?, ?, ?)
+args: []interface {}{"new", "active", "banned"}
+
+## read/like
+sql:  SELECT * FROM "users" WHERE name LIKE ? AND email NOT LIKE ?
+args: []interface {}{"a%", "%spam%"}
+
+## read/columns
+sql:  SELECT id, name FROM "users"
+args: []interface {}(nil)
+
+## read/select-distinct
+sql:  SELECT DISTINCT count(*) AS n, city FROM "users"
+args: []interface {}(nil)
+
+## read/order-limit-offset
+sql:  SELECT * FROM "users" ORDER BY name ASC, age DESC LIMIT 10 OFFSET 20
+args: []interface {}(nil)
+
+## read/paginate
+sql:  SELECT * FROM "users" LIMIT 25 OFFSET 50
+args: []interface {}(nil)
+
+## read/group-having
+sql:  SELECT * FROM "users" GROUP BY city, role HAVING count(*) > ?
+args: []interface {}{5}
+
+## read/joins
+sql:  SELECT * FROM "users" JOIN "orders" ON orders.user_id = users.id LEFT JOIN "carts" ON carts.user_id = users.id AND carts.active = ?
+args: []interface {}{true}
+
+## read/inner-right-join
+sql:  SELECT * FROM "users" INNER JOIN "a" ON a.id = users.id RIGHT JOIN "b" ON b.id = users.id
+args: []interface {}(nil)
+
+## read/exists
+sql:  SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM orders WHERE user_id = users.id AND total > ?)
+args: []interface {}{100}
+
+## read/not-exists
+sql:  SELECT * FROM "users" WHERE NOT EXISTS (SELECT 1 FROM bans WHERE user_id = users.id AND reason = ?)
+args: []interface {}{"spam"}
+
+## read/cte
+sql:  WITH recent AS (SELECT user_id FROM orders WHERE total > ?) SELECT * FROM "users" WHERE id IN (SELECT user_id FROM recent) AND city = ?
+args: []interface {}{100, "dhaka"}
+
+## read/two-ctes
+sql:  WITH a AS (SELECT id FROM x WHERE v > ?), b AS (SELECT id FROM y WHERE v < ?) SELECT * FROM "users" WHERE city = ?
+args: []interface {}{1, 2, "dhaka"}
+
+## read/soft-delete-filter
+sql:  SELECT * FROM "users" WHERE deleted_at IS NULL
+args: []interface {}(nil)
+
+## read/with-deleted
+sql:  SELECT * FROM "users"
+args: []interface {}(nil)
+
+## count/plain
+sql:  SELECT COUNT(*) FROM "users" WHERE age > ?
+args: []interface {}{21}
+
+## insert/partial
+sql:  INSERT INTO "users" (name, email, score) VALUES (?, ?, ?)
+args: []interface {}{"alice", "alice@test.com", 7}
+
+## insert/all-cols
+sql:  INSERT INTO "users" (id, name, email, score) VALUES (?, ?, ?, ?)
+args: []interface {}{0, "alice", "alice@test.com", 7}
+
+## insert/must-cols
+sql:  INSERT INTO "users" (name, score) VALUES (?, ?)
+args: []interface {}{"alice", 0}
+
+## insert/bulk
+sql:  INSERT INTO "users" (name, email, score) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)
+args: []interface {}{"alice", "alice@test.com", 1, "bob", "bob@test.com", 0, "carol", "", 3}
+
+## update/partial
+sql:  UPDATE "users" SET name = ?, email = ?, score = ? WHERE 
+args: []interface {}{"alice", "alice@test.com", 7}
+
+## update/where
+sql:  UPDATE "users" SET name = ?, email = ?, score = ? WHERE id IN (SELECT id FROM "users" WHERE city = ? ORDER BY id LIMIT 1)
+args: []interface {}{"alice", "alice@test.com", 7, "dhaka"}
+
+## update/all-cols
+sql:  UPDATE "users" SET id = ?, name = ?, email = ?, score = ? WHERE 
+args: []interface {}{0, "alice", "alice@test.com", 7}
+
+## update/many-where
+sql:  UPDATE "users" SET name = ?, email = ?, score = ? WHERE city = ?
+args: []interface {}{"alice", "alice@test.com", 7, "dhaka"}
+
+## delete/by-id
+sql:  DELETE FROM "users" WHERE 
+args: []interface {}(nil)
+
+## delete/where
+sql:  DELETE FROM "users" WHERE rowid IN (SELECT rowid FROM "users" WHERE city = ? LIMIT 1)
+args: []interface {}{"dhaka"}
+
+## delete/many-where
+sql:  DELETE FROM "users" WHERE city = ?
+args: []interface {}{"dhaka"}
+
+## delete/soft
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE deleted_at IS NULL
+args: []interface {}(nil)
+
+## delete/soft-where
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE rowid IN (SELECT rowid FROM "users" WHERE city = ? AND deleted_at IS NULL LIMIT 1)
+args: []interface {}{"dhaka"}
+
+## delete/soft-many-where
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE city = ? AND deleted_at IS NULL
+args: []interface {}{"dhaka"}
+
+## delete/restore
+sql:  UPDATE "users" SET deleted_at = NULL WHERE deleted_at IS NOT NULL
+args: []interface {}(nil)
+
+## delete/restore-where
+sql:  UPDATE "users" SET deleted_at = NULL WHERE rowid IN (SELECT rowid FROM "users" WHERE city = ? AND deleted_at IS NOT NULL LIMIT 1)
+args: []interface {}{"dhaka"}
+

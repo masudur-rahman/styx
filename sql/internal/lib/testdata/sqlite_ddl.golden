@@ -1,0 +1,204 @@
+## scalars/create
+CREATE TABLE IF NOT EXISTS "scalars" (int INTEGER, int_32 INTEGER, int_64 INTEGER, uint_64 INTEGER, float_32 REAL, float_64 REAL, bool BOOLEAN, string TEXT, bytes BLOB, time DATETIME, int_ptr INTEGER, int_64_ptr INTEGER, string_ptr TEXT, bool_ptr BOOLEAN, time_ptr DATETIME);
+
+## scalars/add-columns
+ALTER TABLE "scalars" ADD COLUMN int INTEGER, ADD COLUMN int_32 INTEGER, ADD COLUMN int_64 INTEGER, ADD COLUMN uint_64 INTEGER, ADD COLUMN float_32 REAL, ADD COLUMN float_64 REAL, ADD COLUMN bool BOOLEAN, ADD COLUMN string TEXT, ADD COLUMN bytes BLOB, ADD COLUMN time DATETIME, ADD COLUMN int_ptr INTEGER, ADD COLUMN int_64_ptr INTEGER, ADD COLUMN string_ptr TEXT, ADD COLUMN bool_ptr BOOLEAN, ADD COLUMN time_ptr DATETIME
+
+## scalars/pk
+id
+
+## scalars/soft-delete
+""
+
+## scalars/unique-groups
+[]
+
+## scalars/indexes
+[]
+
+## constraints/create
+CREATE TABLE IF NOT EXISTS "constraints" (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, required TEXT, custom_column TEXT, untagged TEXT, empty_name TEXT);
+
+## constraints/add-columns
+ALTER TABLE "constraints" ADD COLUMN id INTEGER PRIMARY KEY AUTOINCREMENT, ADD COLUMN email TEXT UNIQUE, ADD COLUMN name TEXT NOT NULL, ADD COLUMN slug TEXT UNIQUE NOT NULL, ADD COLUMN required TEXT, ADD COLUMN custom_column TEXT, ADD COLUMN untagged TEXT, ADD COLUMN empty_name TEXT
+
+## constraints/pk
+id
+
+## constraints/soft-delete
+""
+
+## constraints/unique-groups
+[]
+
+## constraints/indexes
+[]
+
+## composite_unique/create
+CREATE TABLE IF NOT EXISTS "composite_unique" (id INTEGER PRIMARY KEY, tenant TEXT, code TEXT, note TEXT, UNIQUE(tenant, code));
+
+## composite_unique/add-columns
+ALTER TABLE "composite_unique" ADD COLUMN id INTEGER PRIMARY KEY, ADD COLUMN tenant TEXT, ADD COLUMN code TEXT, ADD COLUMN note TEXT
+
+## composite_unique/pk
+id
+
+## composite_unique/soft-delete
+""
+
+## composite_unique/unique-groups
+[[tenant] [code]]
+
+## composite_unique/indexes
+[]
+
+## composite_unique/add-constraint
+ALTER TABLE "composite_unique" ADD CONSTRAINT composite_unique_uq_0 UNIQUE(tenant), ADD CONSTRAINT composite_unique_uq_1 UNIQUE(code)
+
+## composite_unique/drop-constraint
+ALTER TABLE "composite_unique" DROP CONSTRAINT IF EXISTS composite_unique_uq_0, DROP CONSTRAINT IF EXISTS composite_unique_uq_1
+
+## indexed/create
+CREATE TABLE IF NOT EXISTS "indexed" (id INTEGER PRIMARY KEY, email TEXT, status TEXT, tenant TEXT, code TEXT, region TEXT, zone TEXT, untagged TEXT);
+
+## indexed/add-columns
+ALTER TABLE "indexed" ADD COLUMN id INTEGER PRIMARY KEY, ADD COLUMN email TEXT, ADD COLUMN status TEXT, ADD COLUMN tenant TEXT, ADD COLUMN code TEXT, ADD COLUMN region TEXT, ADD COLUMN zone TEXT, ADD COLUMN untagged TEXT
+
+## indexed/pk
+id
+
+## indexed/soft-delete
+""
+
+## indexed/unique-groups
+[]
+
+## indexed/indexes
+[{Name:tenant_code Cols:[tenant code] Unique:false} {Name:region_zone Cols:[region zone] Unique:true} {Name: Cols:[email] Unique:true} {Name: Cols:[status] Unique:false}]
+
+## soft_deletable/create
+CREATE TABLE IF NOT EXISTS "soft_deletable" (id INTEGER PRIMARY KEY, name TEXT, deleted_at DATETIME);
+
+## soft_deletable/add-columns
+ALTER TABLE "soft_deletable" ADD COLUMN id INTEGER PRIMARY KEY, ADD COLUMN name TEXT, ADD COLUMN deleted_at DATETIME
+
+## soft_deletable/pk
+id
+
+## soft_deletable/soft-delete
+""
+
+## soft_deletable/unique-groups
+[]
+
+## soft_deletable/indexes
+[]
+
+## json_doc/create
+CREATE TABLE IF NOT EXISTS "json_doc" (id INTEGER PRIMARY KEY, payload TEXT, raw TEXT);
+
+## json_doc/add-columns
+ALTER TABLE "json_doc" ADD COLUMN id INTEGER PRIMARY KEY, ADD COLUMN payload TEXT, ADD COLUMN raw TEXT
+
+## json_doc/pk
+id
+
+## json_doc/soft-delete
+""
+
+## json_doc/unique-groups
+[]
+
+## json_doc/indexes
+[]
+
+## string_pk/create
+CREATE TABLE IF NOT EXISTS "string_pk" (id TEXT PRIMARY KEY, name TEXT);
+
+## string_pk/add-columns
+ALTER TABLE "string_pk" ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN name TEXT
+
+## string_pk/pk
+id
+
+## string_pk/soft-delete
+""
+
+## string_pk/unique-groups
+[]
+
+## string_pk/indexes
+[]
+
+## time_pk/create
+CREATE TABLE IF NOT EXISTS "time_pk" (at DATETIME PRIMARY KEY, name TEXT);
+
+## time_pk/add-columns
+ALTER TABLE "time_pk" ADD COLUMN at DATETIME PRIMARY KEY, ADD COLUMN name TEXT
+
+## time_pk/pk
+at
+
+## time_pk/soft-delete
+""
+
+## time_pk/unique-groups
+[]
+
+## time_pk/indexes
+[]
+
+## typed_columns/create
+CREATE TABLE IF NOT EXISTS "typed_columns" (id TEXT PRIMARY KEY, owner_id TEXT, price numeric(10,2), nickname TEXT, created_at DATETIME, expires_at date);
+
+## typed_columns/add-columns
+ALTER TABLE "typed_columns" ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN owner_id TEXT, ADD COLUMN price numeric(10,2), ADD COLUMN nickname TEXT, ADD COLUMN created_at DATETIME, ADD COLUMN expires_at date
+
+## typed_columns/pk
+id
+
+## typed_columns/soft-delete
+""
+
+## typed_columns/unique-groups
+[]
+
+## typed_columns/indexes
+[]
+
+## embedded/create
+CREATE TABLE IF NOT EXISTS "embedded" (name TEXT NOT NULL, id TEXT PRIMARY KEY, created_at DATETIME, created_by TEXT, updated_at DATETIME, updated_by TEXT, deleted_at DATETIME);
+
+## embedded/add-columns
+ALTER TABLE "embedded" ADD COLUMN name TEXT NOT NULL, ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN created_at DATETIME, ADD COLUMN created_by TEXT, ADD COLUMN updated_at DATETIME, ADD COLUMN updated_by TEXT, ADD COLUMN deleted_at DATETIME
+
+## embedded/pk
+id
+
+## embedded/soft-delete
+"deleted_at"
+
+## embedded/unique-groups
+[]
+
+## embedded/indexes
+[]
+
+## shadowed_embed/create
+CREATE TABLE IF NOT EXISTS "shadowed_embed" (id TEXT PRIMARY KEY, created_by TEXT NOT NULL, created_at DATETIME, updated_at DATETIME, updated_by TEXT, deleted_at DATETIME);
+
+## shadowed_embed/add-columns
+ALTER TABLE "shadowed_embed" ADD COLUMN id TEXT PRIMARY KEY, ADD COLUMN created_by TEXT NOT NULL, ADD COLUMN created_at DATETIME, ADD COLUMN updated_at DATETIME, ADD COLUMN updated_by TEXT, ADD COLUMN deleted_at DATETIME
+
+## shadowed_embed/pk
+id
+
+## shadowed_embed/soft-delete
+"deleted_at"
+
+## shadowed_embed/unique-groups
+[]
+
+## shadowed_embed/indexes
+[]
+

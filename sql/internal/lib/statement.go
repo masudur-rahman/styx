@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +23,10 @@ func observeQuery(ctx context.Context, obs isql.Observer, query string, args []a
 	}
 }
 
+// Statement accumulates the pieces of one SQL statement. It is dialect-aware:
+// every placeholder it emits comes from the Dialect it was created with.
 type Statement struct {
+	dialect          Dialect
 	table            string
 	id               any
 	columns          []string
@@ -32,6 +37,7 @@ type Statement struct {
 	mustFilterColMap map[string]bool
 	where            string
 	args             []any
+	argCounter       int
 	showSQL          bool
 	pkColumn         string
 	orderBy          []string
@@ -51,10 +57,59 @@ type Statement struct {
 }
 
 // cteClause is a single named Common Table Expression (WITH name AS (sql)).
+//
+// Under numbered placeholders the args are merged into the statement at
+// registration time and args stays nil, because the body was renumbered to
+// match. Under positional placeholders they are held here and spliced ahead of
+// the main body args when the query is assembled.
 type cteClause struct {
 	name string
 	sql  string
 	args []any
+}
+
+// placeholderRe matches Postgres positional placeholders ($1, $2, ...).
+var placeholderRe = regexp.MustCompile(`\$(\d+)`)
+
+// NewStatement returns a statement that emits SQL for the given dialect.
+func NewStatement(d Dialect) Statement {
+	return Statement{dialect: d}
+}
+
+// Dialect returns the dialect this statement emits SQL for.
+func (stmt *Statement) Dialect() Dialect {
+	if stmt.dialect == nil {
+		return Postgres
+	}
+	return stmt.dialect
+}
+
+// nextPlaceholder consumes one bound-argument slot and returns its marker.
+func (stmt *Statement) nextPlaceholder() string {
+	stmt.argCounter++
+	return stmt.Dialect().Placeholder(stmt.argCounter)
+}
+
+// bindCond rewrites the leading n "?" markers in cond into the dialect's
+// placeholder form. Dialects whose placeholders are positional already use "?"
+// and get the condition back untouched.
+func (stmt *Statement) bindCond(cond string, n int) string {
+	if !stmt.Dialect().NumberedArgs() {
+		return cond
+	}
+	for i := 0; i < n; i++ {
+		cond = strings.Replace(cond, "?", stmt.nextPlaceholder(), 1)
+	}
+	return cond
+}
+
+// placeholders returns n markers, consuming a slot for each.
+func (stmt *Statement) placeholders(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = stmt.nextPlaceholder()
+	}
+	return out
 }
 
 // Preload registers an association name to be eager-loaded after the read.
@@ -75,12 +130,31 @@ func (stmt *Statement) Args() []any {
 }
 
 // With registers a named Common Table Expression whose body is the already
-// compiled subSQL with its subArgs. The CTE is emitted as a WITH prefix and,
-// because SQLite uses positional "?" placeholders, its args are spliced ahead
-// of the main body args at query-generation time.
+// compiled subSQL with its subArgs. Because Postgres placeholders reference args
+// by number, the sub's $1..$k are shifted by the current arg count and its args
+// are appended, keeping placeholder numbers aligned with arg positions.
 func (stmt *Statement) With(name, subSQL string, subArgs []any) *Statement {
-	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: subSQL, args: subArgs})
+	if !stmt.Dialect().NumberedArgs() {
+		stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: subSQL, args: subArgs})
+		return stmt
+	}
+
+	renumbered := renumberPlaceholders(subSQL, stmt.argCounter)
+	stmt.argCounter += len(subArgs)
+	stmt.args = append(stmt.args, subArgs...)
+	stmt.ctes = append(stmt.ctes, cteClause{name: name, sql: renumbered})
 	return stmt
+}
+
+// renumberPlaceholders shifts every $N placeholder in q up by offset.
+func renumberPlaceholders(q string, offset int) string {
+	if offset == 0 {
+		return q
+	}
+	return placeholderRe.ReplaceAllStringFunc(q, func(m string) string {
+		n, _ := strconv.Atoi(m[1:])
+		return "$" + strconv.Itoa(n+offset)
+	})
 }
 
 func (stmt *Statement) Table(name string) *Statement {
@@ -102,18 +176,17 @@ func (stmt *Statement) In(col string, values ...any) *Statement {
 		stmt.where += " AND "
 	}
 
-	placeholders := make([]string, len(values))
-	for i := range values {
-		placeholders[i] = "?"
-	}
+	placeholders := stmt.placeholders(len(values))
 	stmt.args = append(stmt.args, values...)
 	stmt.where += fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ", "))
 	return stmt
 }
 
 func (stmt *Statement) Where(cond string, args ...any) *Statement {
+	cond = stmt.bindCond(cond, len(args))
 	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
+		// Create a new slice to avoid sharing underlying array
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
 		stmt.args = append(stmt.args, newArgs...)
@@ -126,7 +199,7 @@ func (stmt *Statement) generateWhereClauseFromID() string {
 		return ""
 	}
 	stmt.args = append(stmt.args, stmt.id)
-	return "id = ?"
+	return "id = " + stmt.nextPlaceholder()
 }
 
 func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
@@ -138,16 +211,16 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 		val = val.Elem()
 	}
 
-	for idx := 0; idx < val.NumField(); idx++ {
-		field := val.Type().Field(idx)
-		col := core.GetFieldName(field)
+	for _, f := range core.WalkFields(val.Type()) {
+		col := core.GetFieldName(f.StructField)
+		fv := f.Value(val)
 
-		if !(stmt.allCols || stmt.mustFilterColMap[col] || core.HasReqTag(field) || !val.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustFilterColMap[col] || core.HasReqTag(f.StructField) || !fv.IsZero()) {
 			continue
 		}
 
-		conditions = append(conditions, col+" = ?")
-		stmt.args = append(stmt.args, core.SQLArgValue(field, val.Field(idx)))
+		conditions = append(conditions, col+" = "+stmt.nextPlaceholder())
+		stmt.args = append(stmt.args, core.SQLArgValue(f.StructField, fv))
 	}
 
 	return strings.Join(conditions, " AND ")
@@ -156,6 +229,11 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
 	stmt.where = stmt.AddWhereClause(stmt.generateWhereClauseFromID())
 	if len(filter) > 0 {
+		// Noted here so a single-row delete or restore can order by it; the
+		// filter is the only place those statements see the document type.
+		if stmt.pkColumn == "" {
+			stmt.pkColumn, _ = core.DeclaredPKColumn(filter[0])
+		}
 		stmt.where = stmt.AddWhereClause(stmt.GenerateWhereClauseFromFilter(filter[0]))
 	}
 	return stmt
@@ -245,6 +323,7 @@ func (stmt *Statement) GroupBy(cols ...string) *Statement {
 
 // Having sets the HAVING clause for GROUP BY filtering.
 func (stmt *Statement) Having(cond string, args ...any) *Statement {
+	cond = stmt.bindCond(cond, len(args))
 	stmt.having = cond
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
@@ -256,6 +335,7 @@ func (stmt *Statement) Having(cond string, args ...any) *Statement {
 
 // Or adds an OR condition to the WHERE clause.
 func (stmt *Statement) Or(cond string, args ...any) *Statement {
+	cond = stmt.bindCond(cond, len(args))
 	if stmt.where != "" {
 		stmt.where += " OR " + cond
 	} else {
@@ -271,21 +351,23 @@ func (stmt *Statement) Or(cond string, args ...any) *Statement {
 
 // Like adds a LIKE condition to the WHERE clause.
 func (stmt *Statement) Like(col string, pattern string) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("%s LIKE ?", col))
+	stmt.where = stmt.AddWhereClause(col + " LIKE " + stmt.nextPlaceholder())
 	stmt.args = append(stmt.args, pattern)
 	return stmt
 }
 
 // NotLike adds a NOT LIKE condition to the WHERE clause.
 func (stmt *Statement) NotLike(col string, pattern string) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("%s NOT LIKE ?", col))
+	stmt.where = stmt.AddWhereClause(col + " NOT LIKE " + stmt.nextPlaceholder())
 	stmt.args = append(stmt.args, pattern)
 	return stmt
 }
 
 // Exists adds an EXISTS subquery condition to the WHERE clause.
 func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("EXISTS (%s)", subquery))
+	subquery = stmt.bindCond(subquery, len(args))
+	cond := fmt.Sprintf("EXISTS (%s)", subquery)
+	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
@@ -296,7 +378,9 @@ func (stmt *Statement) Exists(subquery string, args ...any) *Statement {
 
 // NotExists adds a NOT EXISTS subquery condition to the WHERE clause.
 func (stmt *Statement) NotExists(subquery string, args ...any) *Statement {
-	stmt.where = stmt.AddWhereClause(fmt.Sprintf("NOT EXISTS (%s)", subquery))
+	subquery = stmt.bindCond(subquery, len(args))
+	cond := fmt.Sprintf("NOT EXISTS (%s)", subquery)
+	stmt.where = stmt.AddWhereClause(cond)
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
 		copy(newArgs, args)
@@ -357,6 +441,7 @@ func (stmt *Statement) InnerJoin(table string, on string, args ...any) *Statemen
 }
 
 func (stmt *Statement) addJoin(joinType, table, on string, args ...any) *Statement {
+	on = stmt.bindCond(on, len(args))
 	stmt.joins = append(stmt.joins, fmt.Sprintf("%s \"%s\" ON %s", joinType, table, on))
 	if len(args) > 0 {
 		newArgs := make([]any, len(args))
@@ -385,39 +470,123 @@ func (stmt *Statement) SetForceDelete() *Statement {
 }
 
 // IsSoftDelete returns true if soft delete is enabled and not force-deleting.
+// SoftDeleteColumn returns the column marking a row deleted: the one taken from
+// a document, else the one Sync registered against the table name.
+//
+// The fallback matters for statements never handed a document — DeleteOne by
+// ID(), Restore, Count — which would otherwise treat a soft-delete table as an
+// ordinary one and delete the row outright.
+func (stmt *Statement) SoftDeleteColumn() string {
+	if stmt.softDeleteCol != "" {
+		return stmt.softDeleteCol
+	}
+	return core.SoftDeleteColumnForTable(stmt.table)
+}
+
 func (stmt *Statement) IsSoftDelete() bool {
-	return stmt.softDeleteCol != "" && !stmt.forceDelete
+	return stmt.SoftDeleteColumn() != "" && !stmt.forceDelete
 }
 
-// GenerateSoftDeleteQuery generates an UPDATE query that sets the soft delete column.
+// The values the soft-delete column is moved between.
+const (
+	softDeletedValue = "CURRENT_TIMESTAMP"
+	softLiveValue    = "NULL"
+)
+
+// GenerateSoftDeleteQuery generates an UPDATE that marks at most one row deleted.
 func (stmt *Statement) GenerateSoftDeleteQuery() string {
-	return fmt.Sprintf("UPDATE \"%s\" SET %s = CURRENT_TIMESTAMP WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
+	return stmt.softDeleteQuery(true, true)
 }
 
-// GenerateRestoreQuery generates an UPDATE that clears the soft delete column.
+// GenerateSoftDeleteManyQuery generates an UPDATE that marks every matching row
+// deleted.
+func (stmt *Statement) GenerateSoftDeleteManyQuery() string {
+	return stmt.softDeleteQuery(true, false)
+}
+
+// GenerateRestoreQuery generates an UPDATE that clears the soft delete column
+// on at most one row, the inverse of GenerateSoftDeleteQuery.
 func (stmt *Statement) GenerateRestoreQuery() string {
-	return fmt.Sprintf("UPDATE \"%s\" SET %s = NULL WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
+	return stmt.softDeleteQuery(false, true)
 }
 
-// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix and splices
-// the CTE args ahead of the main body args, since SQLite placeholders are
-// positional and the CTE bodies appear first in the final SQL. Returns "" when
-// no CTEs are registered.
+// softDeleteQuery moves rows to the other side of the soft-delete marker.
+//
+// Rows already on the destination side are excluded, which matters most under a
+// single-row cap: a filter matching one deleted row and two live ones would
+// otherwise re-stamp the deleted one and report success, leaving both live rows
+// in place. It also keeps the affected-row count honest, so a delete that
+// changed nothing reports ErrNotFound rather than a silent no-op.
+func (stmt *Statement) softDeleteQuery(markDeleted, limitOne bool) string {
+	col := stmt.SoftDeleteColumn()
+
+	value, guard := softDeletedValue, col+" IS NULL"
+	if !markDeleted {
+		value, guard = softLiveValue, col+" IS NOT NULL"
+	}
+	stmt.where = stmt.AddWhereClause(guard)
+
+	return fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s",
+		quoteIdent(stmt.table), col, value, stmt.rowLimit(limitOne))
+}
+
+// rowLimit returns the statement's WHERE condition, narrowed to a single row
+// when limitOne is set.
+//
+// Neither Postgres nor the SQLite build styx links accepts UPDATE ... LIMIT, so
+// the row is chosen by a subquery instead. It selects the primary key where the
+// struct declares one: the key both identifies the row stably and orders the
+// candidates, so the same call settles on the same row rather than whichever
+// the planner reached first.
+//
+// Without a declared key the subquery falls back to the dialect's physical row
+// identifier. That is a weaker choice on Postgres, where an UPDATE rewrites the
+// ctid it just selected, so a row updated concurrently in between leaves the
+// outer statement matching nothing at all.
+//
+// An ID() lookup already names a single row, so its condition is left alone.
+func (stmt *Statement) rowLimit(limitOne bool) string {
+	if !limitOne || stmt.id != nil || stmt.where == "" {
+		return stmt.where
+	}
+
+	rowID, orderBy := stmt.pkColumn, ""
+	if rowID == "" {
+		rowID = stmt.Dialect().RowIDExpr()
+	} else {
+		orderBy = " ORDER BY " + rowID
+	}
+
+	return fmt.Sprintf("%s IN (SELECT %s FROM %s WHERE %s%s LIMIT 1)",
+		rowID, rowID, quoteIdent(stmt.table), stmt.where, orderBy)
+}
+
+// buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix.
+//
+// Under numbered placeholders the CTE args were already merged into stmt.args
+// by With, so only the SQL text is assembled here. Under positional
+// placeholders they are spliced ahead of the main body args, because the CTE
+// bodies appear first in the final SQL. Returns "" when no CTEs are registered.
 func (stmt *Statement) buildCTEPrefix() string {
 	if len(stmt.ctes) == 0 {
 		return ""
 	}
+
 	parts := make([]string, len(stmt.ctes))
 	var cteArgs []any
 	for i, c := range stmt.ctes {
 		parts[i] = fmt.Sprintf("%s AS (%s)", c.name, c.sql)
 		cteArgs = append(cteArgs, c.args...)
 	}
-	stmt.args = append(cteArgs, stmt.args...)
+	if len(cteArgs) > 0 {
+		stmt.args = append(cteArgs, stmt.args...)
+	}
+
 	return "WITH " + strings.Join(parts, ", ") + " "
 }
 
 // GenerateReadQuery builds a SELECT query from the current statement state.
+
 func (stmt *Statement) GenerateReadQuery(doc any) string {
 	var colParts []string
 	if len(stmt.aggregates) > 0 {
@@ -450,8 +619,8 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 		b.WriteString(join)
 	}
 
-	if stmt.softDeleteCol != "" && !stmt.withDeleted {
-		stmt.where = stmt.AddWhereClause(stmt.softDeleteCol + " IS NULL")
+	if softCol := stmt.SoftDeleteColumn(); softCol != "" && !stmt.withDeleted {
+		stmt.where = stmt.AddWhereClause(softCol + " IS NULL")
 	}
 	if stmt.where != "" {
 		b.WriteString(" WHERE ")
@@ -540,11 +709,7 @@ func (stmt *Statement) GenerateCountQuery() string {
 		b.WriteString(join)
 	}
 
-	softCol := stmt.softDeleteCol
-	if softCol == "" {
-		softCol = core.SoftDeleteColumnForTable(stmt.table)
-	}
-	if softCol != "" && !stmt.withDeleted {
+	if softCol := stmt.SoftDeleteColumn(); softCol != "" && !stmt.withDeleted {
 		stmt.where = stmt.AddWhereClause(softCol + " IS NULL")
 	}
 	if stmt.where != "" {
@@ -577,29 +742,23 @@ func (stmt *Statement) GenerateInsertQuery(doc any) string {
 		rvalue = rvalue.Elem()
 	}
 	var cols []string
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if core.IsRelationField(field) || core.IsIgnoredField(field) {
-			continue
-		}
-		col := core.GetFieldName(field)
+	for _, f := range core.WalkFields(rvalue.Type()) {
+		col := core.GetFieldName(f.StructField)
+		fv := f.Value(rvalue)
 
-		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(f.StructField) || !fv.IsZero()) {
 			continue
 		}
 
 		cols = append(cols, col)
-		stmt.args = append(stmt.args, core.SQLArgValue(field, rvalue.Field(idx)))
+		stmt.args = append(stmt.args, core.SQLArgValue(f.StructField, fv))
 	}
 
 	if stmt.table == "" {
 		stmt.table = core.GetTableName(doc)
 	}
 
-	placeholders := make([]string, len(cols))
-	for i := range placeholders {
-		placeholders[i] = "?"
-	}
+	placeholders := stmt.placeholders(len(cols))
 
 	return fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES (%s)",
 		stmt.table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
@@ -650,35 +809,32 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		first = first.Elem()
 	}
 
-	include := make([]bool, first.NumField())
+	walked := core.WalkFields(first.Type())
+	include := make([]bool, len(walked))
 	for _, doc := range docs {
 		rv := reflect.ValueOf(doc)
 		if rv.Kind() == reflect.Pointer {
 			rv = rv.Elem()
 		}
-		for idx := 0; idx < rv.NumField(); idx++ {
+		for idx, f := range walked {
 			if include[idx] {
 				continue
 			}
-			field := rv.Type().Field(idx)
-			if core.IsRelationField(field) || core.IsIgnoredField(field) {
-				continue
-			}
-			col := core.GetFieldName(field)
-			if stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rv.Field(idx).IsZero() {
+			col := core.GetFieldName(f.StructField)
+			if stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(f.StructField) || !f.Value(rv).IsZero() {
 				include[idx] = true
 			}
 		}
 	}
 
 	var cols []string
-	var fieldIdxs []int
-	for idx := 0; idx < first.NumField(); idx++ {
+	var included []core.FieldRef
+	for idx := range walked {
 		if !include[idx] {
 			continue
 		}
-		cols = append(cols, core.GetFieldName(first.Type().Field(idx)))
-		fieldIdxs = append(fieldIdxs, idx)
+		cols = append(cols, core.GetFieldName(walked[idx].StructField))
+		included = append(included, walked[idx])
 	}
 
 	if stmt.table == "" {
@@ -691,10 +847,10 @@ func (stmt *Statement) GenerateBulkInsertQuery(docs []any) string {
 		if rv.Kind() == reflect.Pointer {
 			rv = rv.Elem()
 		}
-		placeholders := make([]string, len(fieldIdxs))
-		for i, fi := range fieldIdxs {
-			placeholders[i] = "?"
-			stmt.args = append(stmt.args, core.SQLArgValue(rv.Type().Field(fi), rv.Field(fi)))
+		placeholders := make([]string, len(included))
+		for i, f := range included {
+			placeholders[i] = stmt.nextPlaceholder()
+			stmt.args = append(stmt.args, core.SQLArgValue(f.StructField, f.Value(rv)))
 		}
 		rows = append(rows, "("+strings.Join(placeholders, ", ")+")")
 	}
@@ -775,41 +931,97 @@ func (stmt *Statement) generateMustFilterColMap() map[string]bool {
 	return stmt.mustFilterColMap
 }
 
+// GenerateUpdateQuery builds an UPDATE that changes at most one row.
 func (stmt *Statement) GenerateUpdateQuery(doc any) string {
-	stmt.mustColMap = stmt.generateMustColMap()
-	var setCols []string
-	var setArgs []any
-	rvalue := reflect.ValueOf(doc)
-	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
-		rvalue = rvalue.Elem()
-	}
-	for idx := 0; idx < rvalue.NumField(); idx++ {
-		field := rvalue.Type().Field(idx)
-		if core.IsRelationField(field) || core.IsIgnoredField(field) {
-			continue
-		}
-		col := core.GetFieldName(field)
+	return stmt.generateUpdateQuery(doc, true)
+}
 
-		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(field) || !rvalue.Field(idx).IsZero()) {
-			continue
-		}
+// GenerateUpdateManyQuery builds an UPDATE that changes every matching row.
+func (stmt *Statement) GenerateUpdateManyQuery(doc any) string {
+	return stmt.generateUpdateQuery(doc, false)
+}
 
-		setCols = append(setCols, col+" = ?")
-		setArgs = append(setArgs, core.SQLArgValue(field, rvalue.Field(idx)))
-	}
+func (stmt *Statement) generateUpdateQuery(doc any, limitOne bool) string {
+	setCols, setArgs := stmt.updateSetClause(doc)
 
 	if stmt.table == "" {
 		stmt.table = core.GetTableName(doc)
 	}
+	if stmt.pkColumn == "" {
+		stmt.pkColumn, _ = core.DeclaredPKColumn(doc)
+	}
 
-	// SET args go before WHERE args in the driver call
+	// SET placeholders are numbered afresh from 1, so any existing WHERE
+	// placeholders have to shift up by however many SET columns there are.
+	if stmt.Dialect().NumberedArgs() {
+		stmt.where = renumberPlaceholders(stmt.where, len(setCols))
+		stmt.argCounter += len(setCols)
+	}
+
+	// SET args before WHERE args so SQL argument order matches
 	stmt.args = append(setArgs, stmt.args...)
 
-	return fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s",
-		stmt.table, strings.Join(setCols, ", "), stmt.where)
+	return fmt.Sprintf("UPDATE %s SET %s WHERE %s",
+		quoteIdent(stmt.table), strings.Join(setCols, ", "), stmt.rowLimit(limitOne))
 }
 
+// updateSetClause builds the "col = placeholder" list and its arguments from
+// the fields of doc that the statement is set to write.
+func (stmt *Statement) updateSetClause(doc any) ([]string, []any) {
+	stmt.mustColMap = stmt.generateMustColMap()
+
+	rvalue := reflect.ValueOf(doc)
+	if rvalue.Kind() == reflect.Pointer {
+		rvalue = rvalue.Elem()
+	}
+
+	var setCols []string
+	var setArgs []any
+	for _, f := range core.WalkFields(rvalue.Type()) {
+		col := core.GetFieldName(f.StructField)
+		fv := f.Value(rvalue)
+
+		if !(stmt.allCols || stmt.mustColMap[col] || core.HasReqTag(f.StructField) || !fv.IsZero()) {
+			continue
+		}
+
+		setCols = append(setCols, col+" = "+stmt.Dialect().Placeholder(len(setCols)+1))
+		setArgs = append(setArgs, core.SQLArgValue(f.StructField, fv))
+	}
+
+	return setCols, setArgs
+}
+
+// GenerateDeleteQuery builds a DELETE that removes at most one row.
 func (stmt *Statement) GenerateDeleteQuery() string {
-	query := fmt.Sprintf("DELETE FROM \"%s\" WHERE %s", stmt.table, stmt.where)
-	return query
+	return fmt.Sprintf("DELETE FROM %s WHERE %s", quoteIdent(stmt.table), stmt.rowLimit(true))
+}
+
+// GenerateDeleteManyQuery builds a DELETE that removes every matching row.
+func (stmt *Statement) GenerateDeleteManyQuery() string {
+	return fmt.Sprintf("DELETE FROM %s WHERE %s", quoteIdent(stmt.table), stmt.rowLimit(false))
+}
+
+// UpdateQuery picks the UPDATE an engine needs: one row or every matching row.
+func (stmt *Statement) UpdateQuery(doc any, one bool) string {
+	if one {
+		return stmt.GenerateUpdateQuery(doc)
+	}
+	return stmt.GenerateUpdateManyQuery(doc)
+}
+
+// DeleteQuery picks the statement that removes rows: a soft-delete UPDATE when
+// the schema marks rows deleted, a DELETE otherwise, over one row or all of
+// them.
+func (stmt *Statement) DeleteQuery(one bool) string {
+	switch {
+	case stmt.IsSoftDelete() && one:
+		return stmt.GenerateSoftDeleteQuery()
+	case stmt.IsSoftDelete():
+		return stmt.GenerateSoftDeleteManyQuery()
+	case one:
+		return stmt.GenerateDeleteQuery()
+	default:
+		return stmt.GenerateDeleteManyQuery()
+	}
 }

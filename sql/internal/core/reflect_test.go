@@ -2,7 +2,10 @@ package core
 
 import (
 	stdsql "database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -186,4 +189,207 @@ func mustExec(t *testing.T, db *stdsql.DB, query string) {
 	t.Helper()
 	_, err := db.Exec(query)
 	require.NoError(t, err)
+}
+
+// uuidLike mimics google/uuid.UUID: a [16]byte with pointer-receiver Scan.
+type uuidLike [16]byte
+
+func (u *uuidLike) Scan(src any) error {
+	s, ok := src.(string)
+	if !ok {
+		return fmt.Errorf("uuidLike: cannot scan %T", src)
+	}
+	if len(s) != 32 {
+		return fmt.Errorf("uuidLike: bad length %d", len(s))
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return err
+	}
+	copy(u[:], b)
+	return nil
+}
+
+// failingScanner always errors, to prove Scan errors propagate.
+type failingScanner struct{}
+
+func (failingScanner) Scan(any) error { return errors.New("boom") }
+
+func TestSetFieldValue_scanner(t *testing.T) {
+	const hexID = "6ba7b8109dad11d180b400c04fd430c8"
+	var wantUUID uuidLike
+	b, err := hex.DecodeString(hexID)
+	require.NoError(t, err)
+	copy(wantUUID[:], b)
+
+	type row struct {
+		ID    uuidLike
+		IDPtr *uuidLike
+		Plain string
+		Num   int64
+	}
+
+	tests := []struct {
+		name    string
+		field   string
+		raw     any
+		wantErr string
+		check   func(t *testing.T, r row)
+	}{
+		{
+			name:  "value receiver field is hydrated",
+			field: "ID",
+			raw:   hexID,
+			check: func(t *testing.T, r row) { assert.Equal(t, wantUUID, r.ID) },
+		},
+		{
+			name:  "pointer field is allocated and hydrated",
+			field: "IDPtr",
+			raw:   hexID,
+			check: func(t *testing.T, r row) {
+				require.NotNil(t, r.IDPtr)
+				assert.Equal(t, wantUUID, *r.IDPtr)
+			},
+		},
+		{
+			name:    "scan error propagates",
+			field:   "ID",
+			raw:     "not-hex",
+			wantErr: "bad length",
+		},
+		{
+			name:    "wrong source type propagates",
+			field:   "ID",
+			raw:     int64(42),
+			wantErr: "cannot scan int64",
+		},
+		{
+			name:  "non-scanner string field is unaffected",
+			field: "Plain",
+			raw:   "hello",
+			check: func(t *testing.T, r row) { assert.Equal(t, "hello", r.Plain) },
+		},
+		{
+			name:  "non-scanner int field is unaffected",
+			field: "Num",
+			raw:   int64(7),
+			check: func(t *testing.T, r row) { assert.Equal(t, int64(7), r.Num) },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var r row
+			rv := reflect.ValueOf(&r).Elem()
+			idx, ok := rv.Type().FieldByName(tc.field)
+			require.True(t, ok)
+
+			err := setFieldValue(rv.FieldByName(tc.field), idx, tc.raw)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			tc.check(t, r)
+		})
+	}
+}
+
+func TestSetFieldValue_scannerErrorIsReturned(t *testing.T) {
+	type row struct{ F failingScanner }
+
+	var r row
+	rv := reflect.ValueOf(&r).Elem()
+	sf, ok := rv.Type().FieldByName("F")
+	require.True(t, ok)
+
+	err := setFieldValue(rv.FieldByName("F"), sf, "anything")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "scanning into field F")
+	assert.ErrorContains(t, err, "boom")
+}
+
+func TestSetFieldValue_jsonTagWinsOverScanner(t *testing.T) {
+	type row struct {
+		Data uuidLike `db:"data,json"`
+	}
+
+	var r row
+	rv := reflect.ValueOf(&r).Elem()
+	sf, ok := rv.Type().FieldByName("Data")
+	require.True(t, ok)
+
+	// A json-tagged field must route to setJSONField, not the Scanner branch;
+	// the Scanner would reject this input as a bad length.
+	err := setFieldValue(rv.FieldByName("Data"), sf, []byte(`"not a uuid"`))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "bad length")
+}
+
+func TestSetFieldValue_unexportedFieldIsSkipped(t *testing.T) {
+	type row struct {
+		id uuidLike //nolint:unused // exercises the CanSet guard
+	}
+
+	var r row
+	rv := reflect.ValueOf(&r).Elem()
+	sf, ok := rv.Type().FieldByName("id")
+	require.True(t, ok)
+
+	require.NoError(t, setFieldValue(rv.FieldByName("id"), sf, "whatever"))
+}
+
+func TestDeclaredPKColumn(t *testing.T) {
+	type tagged struct {
+		Key  string `db:"key,pk"`
+		Name string `db:"name"`
+	}
+	type renamedID struct {
+		ID string `db:"identifier,pk"`
+	}
+	type untagged struct {
+		ID   string
+		Name string
+	}
+	type embedded struct {
+		tagged
+		Extra string `db:"extra"`
+	}
+
+	tests := []struct {
+		name     string
+		table    any
+		want     string
+		declared bool
+	}{
+		{"pk tag names the column", tagged{}, "key", true},
+		{"pk column renamed by the tag", renamedID{}, "identifier", true},
+		{"pointer to struct", &tagged{}, "key", true},
+		{"slice of structs", []tagged{}, "key", true},
+		{"pk promoted from an embedded struct", embedded{}, "key", true},
+		{"no pk tag at all", untagged{}, "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			col, ok := DeclaredPKColumn(tc.table)
+			assert.Equal(t, tc.want, col)
+			assert.Equal(t, tc.declared, ok)
+		})
+	}
+}
+
+// TestGetPKColumn_fallsBackToID pins the guess DeclaredPKColumn exists to avoid:
+// a struct tagging no primary key still reports one.
+func TestGetPKColumn_fallsBackToID(t *testing.T) {
+	type untaggedPK struct {
+		Name string `db:"name"`
+	}
+	type taggedPK struct {
+		Key string `db:"key,pk"`
+	}
+
+	assert.Equal(t, DefaultPKColumn, GetPKColumn(untaggedPK{}))
+	assert.Equal(t, "key", GetPKColumn(taggedPK{}))
 }

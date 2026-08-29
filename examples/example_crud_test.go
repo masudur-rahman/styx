@@ -64,3 +64,44 @@ func Example_filters() {
 	// by struct filter: alice
 	// projected: alice email empty: true
 }
+
+// Example_updateManyDeleteMany shows the difference between the One and Many
+// forms. A filter matching three rows changes one of them with UpdateOne and
+// all three with UpdateMany.
+func Example_updateManyDeleteMany() {
+	db := openDB()
+	db.Sync(ctx, Account{})
+	db.Table("account").InsertMany(ctx, []any{
+		&Account{Name: "alice", Email: "alice@example.com", Age: 30},
+		&Account{Name: "bob", Email: "bob@example.com", Age: 30},
+		&Account{Name: "carol", Email: "carol@example.com", Age: 30},
+		&Account{Name: "dave", Email: "dave@example.com", Age: 40},
+	})
+
+	// UpdateOne changes a single row, even though three match.
+	db.Table("account").Where("age = ?", 30).UpdateOne(ctx, Account{Age: 31})
+	left, _ := db.Table("account").Where("age = ?", 30).Count(ctx)
+	fmt.Println("still aged 30:", left)
+
+	// UpdateMany changes the rest, and reports how many.
+	changed, _ := db.Table("account").Where("age = ?", 30).UpdateMany(ctx, Account{Age: 31})
+	fmt.Println("changed by UpdateMany:", changed)
+
+	// DeleteMany removes every match and leaves the others alone.
+	removed, _ := db.Table("account").DeleteMany(ctx, Account{Age: 31})
+	fmt.Println("removed:", removed)
+
+	remaining, _ := db.Table("account").Count(ctx)
+	fmt.Println("remaining:", remaining)
+
+	// Matching nothing is not an error for the Many forms.
+	none, err := db.Table("account").Where("age = ?", 99).DeleteMany(ctx)
+	fmt.Println("no match:", none, err)
+
+	// Output:
+	// still aged 30: 2
+	// changed by UpdateMany: 2
+	// removed: 3
+	// remaining: 1
+	// no match: 0 <nil>
+}

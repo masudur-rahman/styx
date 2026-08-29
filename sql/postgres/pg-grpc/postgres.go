@@ -303,6 +303,12 @@ func (d Database) UpdateOne(ctx context.Context, document any) error {
 	return pkg.ParseProtoAnyInto(record.Record, document)
 }
 
+// UpdateMany is unsupported: this engine has no Where, so it cannot express a
+// filter matching more than one row.
+func (d Database) UpdateMany(ctx context.Context, document any) (int64, error) {
+	panic("implement me")
+}
+
 func (d Database) DeleteOne(ctx context.Context, filter ...any) error {
 	if err := dberr.CheckIdOrFilterNonEmpty(d.id, filter); err != nil {
 		return err
@@ -326,6 +332,12 @@ func (d Database) DeleteOne(ctx context.Context, filter ...any) error {
 		Id:    d.id.(string),
 	})
 	return err
+}
+
+// DeleteMany is unsupported: this engine has no Where, so it cannot express a
+// filter matching more than one row.
+func (d Database) DeleteMany(ctx context.Context, filter ...any) (int64, error) {
+	panic("implement me")
 }
 
 func (d Database) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {

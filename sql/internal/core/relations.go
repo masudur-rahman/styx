@@ -216,12 +216,12 @@ func queryByIn(ctx context.Context, base sql.Engine, target reflect.Type, keyCol
 	return slicePtr.Elem(), err
 }
 
-// uniqueKeys collects distinct field values from parents at the given field index.
-func uniqueKeys(parents []reflect.Value, fieldIdx int) []any {
+// uniqueKeys collects distinct field values from parents at the given field.
+func uniqueKeys(parents []reflect.Value, ref FieldRef) []any {
 	seen := map[any]bool{}
 	var keys []any
 	for _, p := range parents {
-		k := p.Field(fieldIdx).Interface()
+		k := ref.Value(p).Interface()
 		if !seen[k] {
 			seen[k] = true
 			keys = append(keys, k)
@@ -262,11 +262,11 @@ func loadBelongsTo(ctx context.Context, base sql.Engine, parents []reflect.Value
 	byKey := map[any]reflect.Value{}
 	for i := 0; i < children.Len(); i++ {
 		c := children.Index(i)
-		byKey[c.Field(childPKIdx).Interface()] = c
+		byKey[childPKIdx.Value(c).Interface()] = c
 	}
 
 	for _, p := range parents {
-		if c, ok := byKey[p.Field(fkIdx).Interface()]; ok {
+		if c, ok := byKey[fkIdx.Value(p).Interface()]; ok {
 			assignOne(p.Field(ri.FieldIndex), c)
 		}
 	}
@@ -290,7 +290,7 @@ func loadHasMany(ctx context.Context, base sql.Engine, parents []reflect.Value, 
 
 	for _, p := range parents {
 		field := p.Field(ri.FieldIndex)
-		if s, ok := grouped[p.Field(parentPKIdx).Interface()]; ok {
+		if s, ok := grouped[parentPKIdx.Value(p).Interface()]; ok {
 			field.Set(s)
 		} else if field.IsNil() {
 			field.Set(reflect.MakeSlice(field.Type(), 0, 0))
@@ -299,13 +299,13 @@ func loadHasMany(ctx context.Context, base sql.Engine, parents []reflect.Value, 
 	return nil
 }
 
-// groupByKey buckets child rows into slices keyed by the value at keyIdx.
-func groupByKey(children reflect.Value, keyIdx int, target reflect.Type) map[any]reflect.Value {
+// groupByKey buckets child rows into slices keyed by the given field's value.
+func groupByKey(children reflect.Value, key FieldRef, target reflect.Type) map[any]reflect.Value {
 	sliceType := reflect.SliceOf(target)
 	grouped := map[any]reflect.Value{}
 	for i := 0; i < children.Len(); i++ {
 		c := children.Index(i)
-		k := c.Field(keyIdx).Interface()
+		k := key.Value(c).Interface()
 		s, ok := grouped[k]
 		if !ok {
 			s = reflect.MakeSlice(sliceType, 0, 0)
@@ -323,8 +323,8 @@ func loadManyToMany(ctx context.Context, base sql.Engine, parents []reflect.Valu
 	// Fetch join-table rows (parentKey, childKey) via a dynamically-typed struct
 	// so the existing query builder handles placeholders and scanning.
 	joinType := reflect.StructOf([]reflect.StructField{
-		{Name: "FK", Type: parents[0].Field(parentPKIdx).Type(), Tag: dbTag(ri.FK)},
-		{Name: "Ref", Type: reflect.New(ri.Target).Elem().Field(pkIndex(ri.Target, childPK)).Type(), Tag: dbTag(ri.Ref)},
+		{Name: "FK", Type: parentPKIdx.Value(parents[0]).Type(), Tag: dbTag(ri.FK)},
+		{Name: "Ref", Type: pkFieldType(ri.Target, childPK), Tag: dbTag(ri.Ref)},
 	})
 	joinSlicePtr := reflect.New(reflect.SliceOf(joinType))
 	if keys := uniqueKeys(parents, parentPKIdx); len(keys) > 0 {
@@ -356,7 +356,7 @@ func loadManyToMany(ctx context.Context, base sql.Engine, parents []reflect.Valu
 	byPK := map[any]reflect.Value{}
 	for i := 0; i < children.Len(); i++ {
 		c := children.Index(i)
-		byPK[c.Field(childPKIdx).Interface()] = c
+		byPK[childPKIdx.Value(c).Interface()] = c
 	}
 
 	assignManyToMany(parents, parentPKIdx, ri, parentToRefs, byPK)
@@ -364,12 +364,12 @@ func loadManyToMany(ctx context.Context, base sql.Engine, parents []reflect.Valu
 }
 
 // assignManyToMany builds each parent's related slice from the resolved children.
-func assignManyToMany(parents []reflect.Value, parentPKIdx int, ri RelationInfo, parentToRefs map[any][]any, byPK map[any]reflect.Value) {
+func assignManyToMany(parents []reflect.Value, parentPKIdx FieldRef, ri RelationInfo, parentToRefs map[any][]any, byPK map[any]reflect.Value) {
 	sliceType := reflect.SliceOf(ri.Target)
 	for _, p := range parents {
 		field := p.Field(ri.FieldIndex)
 		s := reflect.MakeSlice(sliceType, 0, 0)
-		for _, ref := range parentToRefs[p.Field(parentPKIdx).Interface()] {
+		for _, ref := range parentToRefs[parentPKIdx.Value(p).Interface()] {
 			if c, ok := byPK[ref]; ok {
 				s = reflect.Append(s, c)
 			}
@@ -382,9 +382,12 @@ func dbTag(col string) reflect.StructTag {
 	return reflect.StructTag(`db:"` + col + `"`)
 }
 
-func pkIndex(t reflect.Type, pk string) int {
-	if idx, ok := GetDBFieldMap(reflect.New(t).Interface())[pk]; ok {
-		return idx
+// pkFieldType returns the Go type of a target's primary-key column, resolving
+// it through any embedded struct the column was promoted from.
+func pkFieldType(t reflect.Type, pk string) reflect.Type {
+	zero := reflect.New(t).Elem()
+	if ref, ok := GetDBFieldMap(reflect.New(t).Interface())[pk]; ok {
+		return ref.Value(zero).Type()
 	}
-	return 0
+	return zero.Field(0).Type()
 }
