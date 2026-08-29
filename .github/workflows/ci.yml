@@ -14,23 +14,94 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+env:
+  # Matches GO_VERSION in the Makefile.
+  GO_VERSION: '1.23'
+
 jobs:
-  build:
-    name: Build
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    # sql/postgres talks to a real database rather than a mock, so CI has to
+    # provide one. The credentials match those hard-coded in postgres_test.go.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+  lint:
+    name: Formatting
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - name: Set up QEMU
-        id: qemu
-        uses: docker/setup-qemu-action@v2
-
-      - name: Setup Go 1.21
-        id: go
-        uses: actions/setup-go@v3
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
 
-      - name: Verify modules
-        run: make verify
+      - name: Install formatters
+        # Pinned rather than @latest, so a new release of either tool cannot
+        # fail an unrelated pull request.
+        run: |
+          go install github.com/incu6us/goimports-reviser/v3@v3.6.5
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.10.0
+
+      - name: Check formatting
+        run: |
+          ./hack/fmt.sh vendor
+          if [ -n "$(git status --porcelain)" ]; then
+            git diff
+            echo "::error::formatting is out of date, run 'make fmt'"
+            exit 1
+          fi
+
+  modules:
+    name: Module tidiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
+
+      - name: Check go.mod and go.sum are tidy
+        # vendor/ is gitignored, so there is nothing to diff it against; only
+        # the module files are checked here.
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain)" ]; then
+            git diff
+            echo "::error::go.mod or go.sum is out of date, run 'go mod tidy'"
+            exit 1
+          fi
