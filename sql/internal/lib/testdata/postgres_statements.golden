@@ -99,18 +99,26 @@ sql:  UPDATE "users" SET name = $1, email = $2, score = $3 WHERE
 args: []interface {}{"alice", "alice@test.com", 7}
 
 ## update/where
-sql:  UPDATE "users" SET name = $1, email = $2, score = $3 WHERE city = $4
+sql:  UPDATE "users" SET name = $1, email = $2, score = $3 WHERE id IN (SELECT id FROM "users" WHERE city = $4 ORDER BY id LIMIT 1)
 args: []interface {}{"alice", "alice@test.com", 7, "dhaka"}
 
 ## update/all-cols
 sql:  UPDATE "users" SET id = $1, name = $2, email = $3, score = $4 WHERE 
 args: []interface {}{0, "alice", "alice@test.com", 7}
 
+## update/many-where
+sql:  UPDATE "users" SET name = $1, email = $2, score = $3 WHERE city = $4
+args: []interface {}{"alice", "alice@test.com", 7, "dhaka"}
+
 ## delete/by-id
 sql:  DELETE FROM "users" WHERE 
 args: []interface {}(nil)
 
 ## delete/where
+sql:  DELETE FROM "users" WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 LIMIT 1)
+args: []interface {}{"dhaka"}
+
+## delete/many-where
 sql:  DELETE FROM "users" WHERE city = $1
 args: []interface {}{"dhaka"}
 
@@ -118,7 +126,19 @@ args: []interface {}{"dhaka"}
 sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE 
 args: []interface {}(nil)
 
+## delete/soft-where
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 LIMIT 1)
+args: []interface {}{"dhaka"}
+
+## delete/soft-many-where
+sql:  UPDATE "users" SET deleted_at = CURRENT_TIMESTAMP WHERE city = $1
+args: []interface {}{"dhaka"}
+
 ## delete/restore
 sql:  UPDATE "users" SET deleted_at = NULL WHERE 
 args: []interface {}(nil)
+
+## delete/restore-where
+sql:  UPDATE "users" SET deleted_at = NULL WHERE ctid IN (SELECT ctid FROM "users" WHERE city = $1 LIMIT 1)
+args: []interface {}{"dhaka"}
 

@@ -64,6 +64,12 @@ type Dialect interface {
 	// The shapes differ: information_schema returns a single column, while
 	// SQLite's pragma table_info returns six.
 	ScanColumnName(scan func(...any) error) (string, error)
+
+	// RowIDExpr names the table's physical row identifier. Neither database
+	// accepts UPDATE ... LIMIT, so a statement is capped at one row by picking
+	// that row through a subquery on this expression, which works whether or
+	// not the table declares a primary key.
+	RowIDExpr() string
 }
 
 // postgres implements Dialect for PostgreSQL.
@@ -100,6 +106,8 @@ func (postgres) TableExistsQuery() string {
 func (postgres) ExistingColumnsQuery() string {
 	return "SELECT column_name FROM information_schema.columns WHERE table_name=$1"
 }
+
+func (postgres) RowIDExpr() string { return "ctid" }
 
 func (postgres) ScanColumnName(scan func(...any) error) (string, error) {
 	var column string
@@ -172,6 +180,8 @@ func (sqlite) TableExistsQuery() string {
 func (sqlite) ExistingColumnsQuery() string {
 	return "SELECT cid, name, type, \"notnull\", dflt_value, pk FROM pragma_table_info(?)"
 }
+
+func (sqlite) RowIDExpr() string { return "rowid" }
 
 func (sqlite) ScanColumnName(scan func(...any) error) (string, error) {
 	var discard any

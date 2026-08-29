@@ -23,7 +23,7 @@ type Postgres struct {
 // and WithStmtCache configure cross-cutting behaviour.
 func NewPostgres(conn *sql.DB, opts ...isql.Option) Postgres {
 	cfg := isql.BuildConfig(opts...)
-	pg := Postgres{conn: conn, observer: cfg.Observer}
+	pg := Postgres{conn: conn, observer: cfg.Observer, statement: lib.NewStatement(lib.Postgres)}
 	if cfg.StmtCache {
 		pg.cache = core.NewStmtCache()
 	}

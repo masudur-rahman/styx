@@ -25,7 +25,7 @@ type SQLite struct {
 // WithStmtCache configure cross-cutting behaviour.
 func NewSQLite(conn *sql.DB, opts ...isql.Option) SQLite {
 	cfg := isql.BuildConfig(opts...)
-	sq := SQLite{conn: conn, observer: cfg.Observer}
+	sq := SQLite{conn: conn, observer: cfg.Observer, statement: lib.NewStatement(lib.SQLite)}
 	if cfg.StmtCache {
 		sq.cache = core.NewStmtCache()
 	}

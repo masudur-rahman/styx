@@ -229,6 +229,11 @@ func (stmt *Statement) GenerateWhereClauseFromFilter(filter any) string {
 func (stmt *Statement) GenerateWhereClause(filter ...any) *Statement {
 	stmt.where = stmt.AddWhereClause(stmt.generateWhereClauseFromID())
 	if len(filter) > 0 {
+		// Noted here so a single-row delete or restore can order by it; the
+		// filter is the only place those statements see the document type.
+		if stmt.pkColumn == "" {
+			stmt.pkColumn, _ = core.DeclaredPKColumn(filter[0])
+		}
 		stmt.where = stmt.AddWhereClause(stmt.GenerateWhereClauseFromFilter(filter[0]))
 	}
 	return stmt
@@ -469,14 +474,57 @@ func (stmt *Statement) IsSoftDelete() bool {
 	return stmt.softDeleteCol != "" && !stmt.forceDelete
 }
 
-// GenerateSoftDeleteQuery generates an UPDATE query that sets the soft delete column.
+// GenerateSoftDeleteQuery generates an UPDATE that marks at most one row deleted.
 func (stmt *Statement) GenerateSoftDeleteQuery() string {
-	return fmt.Sprintf("UPDATE \"%s\" SET %s = CURRENT_TIMESTAMP WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
+	return stmt.softDeleteQuery("CURRENT_TIMESTAMP", true)
 }
 
-// GenerateRestoreQuery generates an UPDATE that clears the soft delete column.
+// GenerateSoftDeleteManyQuery generates an UPDATE that marks every matching row
+// deleted.
+func (stmt *Statement) GenerateSoftDeleteManyQuery() string {
+	return stmt.softDeleteQuery("CURRENT_TIMESTAMP", false)
+}
+
+// GenerateRestoreQuery generates an UPDATE that clears the soft delete column
+// on at most one row, the inverse of GenerateSoftDeleteQuery.
 func (stmt *Statement) GenerateRestoreQuery() string {
-	return fmt.Sprintf("UPDATE \"%s\" SET %s = NULL WHERE %s", stmt.table, stmt.softDeleteCol, stmt.where)
+	return stmt.softDeleteQuery("NULL", true)
+}
+
+func (stmt *Statement) softDeleteQuery(value string, limitOne bool) string {
+	return fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s",
+		quoteIdent(stmt.table), stmt.softDeleteCol, value, stmt.rowLimit(limitOne))
+}
+
+// rowLimit returns the statement's WHERE condition, narrowed to a single row
+// when limitOne is set.
+//
+// Neither Postgres nor the SQLite build styx links accepts UPDATE ... LIMIT, so
+// the row is chosen by a subquery instead. It selects the primary key where the
+// struct declares one: the key both identifies the row stably and orders the
+// candidates, so the same call settles on the same row rather than whichever
+// the planner reached first.
+//
+// Without a declared key the subquery falls back to the dialect's physical row
+// identifier. That is a weaker choice on Postgres, where an UPDATE rewrites the
+// ctid it just selected, so a row updated concurrently in between leaves the
+// outer statement matching nothing at all.
+//
+// An ID() lookup already names a single row, so its condition is left alone.
+func (stmt *Statement) rowLimit(limitOne bool) string {
+	if !limitOne || stmt.id != nil || stmt.where == "" {
+		return stmt.where
+	}
+
+	rowID, orderBy := stmt.pkColumn, ""
+	if rowID == "" {
+		rowID = stmt.Dialect().RowIDExpr()
+	} else {
+		orderBy = " ORDER BY " + rowID
+	}
+
+	return fmt.Sprintf("%s IN (SELECT %s FROM %s WHERE %s%s LIMIT 1)",
+		rowID, rowID, quoteIdent(stmt.table), stmt.where, orderBy)
 }
 
 // buildCTEPrefix emits the "WITH n1 AS (sql1), n2 AS (sql2) " prefix.
@@ -853,17 +901,52 @@ func (stmt *Statement) generateMustFilterColMap() map[string]bool {
 	return stmt.mustFilterColMap
 }
 
+// GenerateUpdateQuery builds an UPDATE that changes at most one row.
 func (stmt *Statement) GenerateUpdateQuery(doc any) string {
-	stmt.mustColMap = stmt.generateMustColMap()
-	var setCols []string
-	var setArgs []any
-	rvalue := reflect.ValueOf(doc)
-	if reflect.TypeOf(doc).Kind() == reflect.Pointer {
-		rvalue = rvalue.Elem()
+	return stmt.generateUpdateQuery(doc, true)
+}
+
+// GenerateUpdateManyQuery builds an UPDATE that changes every matching row.
+func (stmt *Statement) GenerateUpdateManyQuery(doc any) string {
+	return stmt.generateUpdateQuery(doc, false)
+}
+
+func (stmt *Statement) generateUpdateQuery(doc any, limitOne bool) string {
+	setCols, setArgs := stmt.updateSetClause(doc)
+
+	if stmt.table == "" {
+		stmt.table = core.GetTableName(doc)
 	}
+	if stmt.pkColumn == "" {
+		stmt.pkColumn, _ = core.DeclaredPKColumn(doc)
+	}
+
 	// SET placeholders are numbered afresh from 1, so any existing WHERE
 	// placeholders have to shift up by however many SET columns there are.
-	freshCounter := 0
+	if stmt.Dialect().NumberedArgs() {
+		stmt.where = renumberPlaceholders(stmt.where, len(setCols))
+		stmt.argCounter += len(setCols)
+	}
+
+	// SET args before WHERE args so SQL argument order matches
+	stmt.args = append(setArgs, stmt.args...)
+
+	return fmt.Sprintf("UPDATE %s SET %s WHERE %s",
+		quoteIdent(stmt.table), strings.Join(setCols, ", "), stmt.rowLimit(limitOne))
+}
+
+// updateSetClause builds the "col = placeholder" list and its arguments from
+// the fields of doc that the statement is set to write.
+func (stmt *Statement) updateSetClause(doc any) ([]string, []any) {
+	stmt.mustColMap = stmt.generateMustColMap()
+
+	rvalue := reflect.ValueOf(doc)
+	if rvalue.Kind() == reflect.Pointer {
+		rvalue = rvalue.Elem()
+	}
+
+	var setCols []string
+	var setArgs []any
 	for _, f := range core.WalkFields(rvalue.Type()) {
 		col := core.GetFieldName(f.StructField)
 		fv := f.Value(rvalue)
@@ -872,32 +955,43 @@ func (stmt *Statement) GenerateUpdateQuery(doc any) string {
 			continue
 		}
 
-		freshCounter++
-		setCols = append(setCols, col+" = "+stmt.Dialect().Placeholder(freshCounter))
+		setCols = append(setCols, col+" = "+stmt.Dialect().Placeholder(len(setCols)+1))
 		setArgs = append(setArgs, core.SQLArgValue(f.StructField, fv))
 	}
 
-	if stmt.table == "" {
-		stmt.table = core.GetTableName(doc)
-	}
-
-	if stmt.Dialect().NumberedArgs() {
-		re := regexp.MustCompile(`\$(\d+)\b`)
-		stmt.where = re.ReplaceAllStringFunc(stmt.where, func(m string) string {
-			n, _ := strconv.Atoi(m[1:])
-			return fmt.Sprintf("$%d", n+freshCounter)
-		})
-		stmt.argCounter = freshCounter + stmt.argCounter
-	}
-
-	// SET args before WHERE args so SQL argument order matches
-	stmt.args = append(setArgs, stmt.args...)
-
-	return fmt.Sprintf("UPDATE \"%s\" SET %s WHERE %s",
-		stmt.table, strings.Join(setCols, ", "), stmt.where)
+	return setCols, setArgs
 }
 
+// GenerateDeleteQuery builds a DELETE that removes at most one row.
 func (stmt *Statement) GenerateDeleteQuery() string {
-	query := fmt.Sprintf("DELETE FROM \"%s\" WHERE %s", stmt.table, stmt.where)
-	return query
+	return fmt.Sprintf("DELETE FROM %s WHERE %s", quoteIdent(stmt.table), stmt.rowLimit(true))
+}
+
+// GenerateDeleteManyQuery builds a DELETE that removes every matching row.
+func (stmt *Statement) GenerateDeleteManyQuery() string {
+	return fmt.Sprintf("DELETE FROM %s WHERE %s", quoteIdent(stmt.table), stmt.rowLimit(false))
+}
+
+// UpdateQuery picks the UPDATE an engine needs: one row or every matching row.
+func (stmt *Statement) UpdateQuery(doc any, one bool) string {
+	if one {
+		return stmt.GenerateUpdateQuery(doc)
+	}
+	return stmt.GenerateUpdateManyQuery(doc)
+}
+
+// DeleteQuery picks the statement that removes rows: a soft-delete UPDATE when
+// the schema marks rows deleted, a DELETE otherwise, over one row or all of
+// them.
+func (stmt *Statement) DeleteQuery(one bool) string {
+	switch {
+	case stmt.IsSoftDelete() && one:
+		return stmt.GenerateSoftDeleteQuery()
+	case stmt.IsSoftDelete():
+		return stmt.GenerateSoftDeleteManyQuery()
+	case one:
+		return stmt.GenerateDeleteQuery()
+	default:
+		return stmt.GenerateDeleteManyQuery()
+	}
 }

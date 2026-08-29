@@ -78,18 +78,34 @@ func GetDBFieldMap(doc any) map[string]FieldRef {
 	return fieldMap
 }
 
-// GetPKColumn returns the primary key column name for a struct, with caching.
+// DefaultPKColumn is the primary key column assumed for a struct that tags none.
+const DefaultPKColumn = "id"
+
+// GetPKColumn returns the primary key column name for a struct, falling back to
+// DefaultPKColumn when no field carries a pk tag.
 func GetPKColumn(table any) string {
+	if col, ok := DeclaredPKColumn(table); ok {
+		return col
+	}
+	return DefaultPKColumn
+}
+
+// DeclaredPKColumn returns the column a pk tag names, and whether one exists.
+//
+// Callers that put the column into SQL use this rather than GetPKColumn: its
+// fallback is a guess, and naming a column the table may not have turns a
+// working statement into a syntax error.
+func DeclaredPKColumn(table any) (string, bool) {
 	t := reflect.TypeOf(table)
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
 
 	if col, ok := pkColumnCache.Load(t); ok {
-		return col.(string)
+		return col.(string), col.(string) != ""
 	}
 
-	pkCol := "id" // default
+	var pkCol string
 	for _, f := range WalkFields(t) {
 		tag, _ := ParseDBTag(f.StructField)
 		if !tag.Has(TokenPK) {
@@ -100,7 +116,7 @@ func GetPKColumn(table any) string {
 	}
 
 	pkColumnCache.Store(t, pkCol)
-	return pkCol
+	return pkCol, pkCol != ""
 }
 
 var softDeleteCache sync.Map

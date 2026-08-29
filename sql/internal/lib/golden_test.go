@@ -192,17 +192,35 @@ func goldenStatements(t *testing.T, d Dialect) {
 		{"update/all-cols", func(s *Statement) string {
 			return s.Table("users").ID(int64(3)).AllCols().GenerateUpdateQuery(doc)
 		}},
+		{"update/many-where", func(s *Statement) string {
+			return s.Table("users").Where("city = ?", "dhaka").GenerateUpdateManyQuery(doc)
+		}},
 		{"delete/by-id", func(s *Statement) string {
 			return s.Table("users").ID(int64(3)).GenerateDeleteQuery()
 		}},
 		{"delete/where", func(s *Statement) string {
 			return s.Table("users").Where("city = ?", "dhaka").GenerateDeleteQuery()
 		}},
+		{"delete/many-where", func(s *Statement) string {
+			return s.Table("users").Where("city = ?", "dhaka").GenerateDeleteManyQuery()
+		}},
 		{"delete/soft", func(s *Statement) string {
 			return s.Table("users").ID(int64(3)).SoftDeleteCol("deleted_at").GenerateSoftDeleteQuery()
 		}},
+		{"delete/soft-where", func(s *Statement) string {
+			return s.Table("users").Where("city = ?", "dhaka").
+				SoftDeleteCol("deleted_at").GenerateSoftDeleteQuery()
+		}},
+		{"delete/soft-many-where", func(s *Statement) string {
+			return s.Table("users").Where("city = ?", "dhaka").
+				SoftDeleteCol("deleted_at").GenerateSoftDeleteManyQuery()
+		}},
 		{"delete/restore", func(s *Statement) string {
 			return s.Table("users").ID(int64(3)).SoftDeleteCol("deleted_at").GenerateRestoreQuery()
+		}},
+		{"delete/restore-where", func(s *Statement) string {
+			return s.Table("users").Where("city = ?", "dhaka").
+				SoftDeleteCol("deleted_at").GenerateRestoreQuery()
 		}},
 	}
 

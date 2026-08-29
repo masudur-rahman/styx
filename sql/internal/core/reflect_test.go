@@ -339,3 +339,57 @@ func TestSetFieldValue_unexportedFieldIsSkipped(t *testing.T) {
 
 	require.NoError(t, setFieldValue(rv.FieldByName("id"), sf, "whatever"))
 }
+
+func TestDeclaredPKColumn(t *testing.T) {
+	type tagged struct {
+		Key  string `db:"key,pk"`
+		Name string `db:"name"`
+	}
+	type renamedID struct {
+		ID string `db:"identifier,pk"`
+	}
+	type untagged struct {
+		ID   string
+		Name string
+	}
+	type embedded struct {
+		tagged
+		Extra string `db:"extra"`
+	}
+
+	tests := []struct {
+		name     string
+		table    any
+		want     string
+		declared bool
+	}{
+		{"pk tag names the column", tagged{}, "key", true},
+		{"pk column renamed by the tag", renamedID{}, "identifier", true},
+		{"pointer to struct", &tagged{}, "key", true},
+		{"slice of structs", []tagged{}, "key", true},
+		{"pk promoted from an embedded struct", embedded{}, "key", true},
+		{"no pk tag at all", untagged{}, "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			col, ok := DeclaredPKColumn(tc.table)
+			assert.Equal(t, tc.want, col)
+			assert.Equal(t, tc.declared, ok)
+		})
+	}
+}
+
+// TestGetPKColumn_fallsBackToID pins the guess DeclaredPKColumn exists to avoid:
+// a struct tagging no primary key still reports one.
+func TestGetPKColumn_fallsBackToID(t *testing.T) {
+	type untaggedPK struct {
+		Name string `db:"name"`
+	}
+	type taggedPK struct {
+		Key string `db:"key,pk"`
+	}
+
+	assert.Equal(t, DefaultPKColumn, GetPKColumn(untaggedPK{}))
+	assert.Equal(t, "key", GetPKColumn(taggedPK{}))
+}
