@@ -248,3 +248,105 @@ func TestNotNull_rejectsMissingValue(t *testing.T) {
 	_, err = db.Table("account").InsertOne(ctx, &account{Name: "acme"})
 	assert.NoError(t, err)
 }
+
+// seedAges inserts one user per age, so a filter on the age matches as many
+// rows as the age repeats.
+func seedAges(t *testing.T, db sql.Engine, ages ...int) {
+	t.Helper()
+	ctx := context.Background()
+	for i, age := range ages {
+		_, err := db.Table("user").InsertOne(ctx, &User{
+			Name:  fmt.Sprintf("user%d", i),
+			Email: fmt.Sprintf("user%d@e.c", i),
+			Age:   age,
+		})
+		assert.NoError(t, err)
+	}
+}
+
+// countAge returns how many live rows carry the given age.
+func countAge(t *testing.T, db sql.Engine, age int) int64 {
+	t.Helper()
+	n, err := db.Table("user").Where("age = ?", age).Count(context.Background())
+	assert.NoError(t, err)
+	return n
+}
+
+// TestUpdateOne_changesOnlyOneMatch is the behaviour this pair exists for: a
+// filter matching three rows used to update all three.
+func TestUpdateOne_changesOnlyOneMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	err := db.Table("user").Where("age = ?", 30).UpdateOne(ctx, User{Age: 31})
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(2), countAge(t, db, 30))
+	assert.Equal(t, int64(1), countAge(t, db, 31))
+	assert.Equal(t, int64(1), countAge(t, db, 40), "rows outside the filter are untouched")
+}
+
+func TestUpdateMany_changesEveryMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	changed, err := db.Table("user").Where("age = ?", 30).UpdateMany(ctx, User{Age: 31})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), changed)
+
+	assert.Equal(t, int64(0), countAge(t, db, 30))
+	assert.Equal(t, int64(3), countAge(t, db, 31))
+	assert.Equal(t, int64(1), countAge(t, db, 40), "rows outside the filter are untouched")
+}
+
+func TestUpdateMany_noMatchReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	changed, err := db.Table("user").Where("age = ?", 99).UpdateMany(ctx, User{Age: 31})
+	assert.NoError(t, err, "matching nothing is not an error for a bulk update")
+	assert.Equal(t, int64(0), changed)
+}
+
+// TestDeleteOne_removesOnlyOneMatch covers the soft-delete path, since User
+// carries an archive column.
+func TestDeleteOne_removesOnlyOneMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	err := db.Table("user").DeleteOne(ctx, User{Age: 30})
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(2), countAge(t, db, 30))
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(4), all, "soft delete marks the row, it does not remove it")
+}
+
+func TestDeleteMany_removesEveryMatch(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30, 30, 30, 40)
+
+	removed, err := db.Table("user").DeleteMany(ctx, User{Age: 30})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), removed)
+
+	assert.Equal(t, int64(0), countAge(t, db, 30))
+	assert.Equal(t, int64(1), countAge(t, db, 40), "rows outside the filter are untouched")
+}
+
+func TestDeleteMany_noMatchReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	removed, err := db.Table("user").DeleteMany(ctx, User{Age: 99})
+	assert.NoError(t, err, "matching nothing is not an error for a bulk delete")
+	assert.Equal(t, int64(0), removed)
+}

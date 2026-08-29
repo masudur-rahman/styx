@@ -392,68 +392,94 @@ func (sq SQLite) InsertMany(ctx context.Context, documents []any) ([]any, error)
 	return ids, nil
 }
 
+// UpdateOne updates one matching row and reports ErrNotFound when none did.
 func (sq SQLite) UpdateOne(ctx context.Context, document any) error {
-	if err := core.RunBeforeUpdate(ctx, document); err != nil {
-		return err
-	}
-	if sq.statement.ShouldValidate() {
-		if err := validation.Validate(document); err != nil {
-			return err
-		}
-	}
-	sq.statement.GenerateWhereClause()
-	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
-		return err
-	}
-
-	query := sq.statement.GenerateUpdateQuery(document)
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	rows, err := sq.updateRows(ctx, document, true)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+	if rows == 0 {
 		return dberr.ErrNotFound
 	}
 	return core.RunAfterUpdate(ctx, document)
 }
 
-func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
-	if len(filter) > 0 {
-		sq = sq.detectSoftDelete(filter[0])
-		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
-			return err
+// UpdateMany updates every matching row and returns how many changed.
+func (sq SQLite) UpdateMany(ctx context.Context, document any) (int64, error) {
+	rows, err := sq.updateRows(ctx, document, false)
+	if err != nil || rows == 0 {
+		return rows, err
+	}
+	return rows, core.RunAfterUpdate(ctx, document)
+}
+
+// updateRows runs an UPDATE built from document and returns the rows it
+// changed. one caps the statement at a single row.
+func (sq SQLite) updateRows(ctx context.Context, document any, one bool) (int64, error) {
+	if err := core.RunBeforeUpdate(ctx, document); err != nil {
+		return 0, err
+	}
+	if sq.statement.ShouldValidate() {
+		if err := validation.Validate(document); err != nil {
+			return 0, err
 		}
 	}
-	sq.statement.GenerateWhereClause(filter...)
+	sq.statement.GenerateWhereClause()
 	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
-		return err
+		return 0, err
 	}
 
-	var query string
-	if sq.statement.IsSoftDelete() {
-		query = sq.statement.GenerateSoftDeleteQuery()
-	} else {
-		query = sq.statement.GenerateDeleteQuery()
-	}
-	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	return sq.execWrite(ctx, sq.statement.UpdateQuery(document, one))
+}
+
+// DeleteOne deletes one matching row and reports ErrNotFound when none did.
+func (sq SQLite) DeleteOne(ctx context.Context, filter ...any) error {
+	rows, err := sq.deleteRows(ctx, true, filter...)
 	if err != nil {
 		return err
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+	if rows == 0 {
 		return dberr.ErrNotFound
 	}
 	if len(filter) > 0 {
 		return core.RunAfterDelete(ctx, filter[0])
 	}
 	return nil
+}
+
+// DeleteMany deletes every matching row and returns how many were removed.
+func (sq SQLite) DeleteMany(ctx context.Context, filter ...any) (int64, error) {
+	rows, err := sq.deleteRows(ctx, false, filter...)
+	if err != nil || rows == 0 || len(filter) == 0 {
+		return rows, err
+	}
+	return rows, core.RunAfterDelete(ctx, filter[0])
+}
+
+// deleteRows runs a DELETE, or the soft-delete UPDATE the schema calls for, and
+// returns the rows it removed. one caps the statement at a single row.
+func (sq SQLite) deleteRows(ctx context.Context, one bool, filter ...any) (int64, error) {
+	if len(filter) > 0 {
+		sq = sq.detectSoftDelete(filter[0])
+		if err := core.RunBeforeDelete(ctx, filter[0]); err != nil {
+			return 0, err
+		}
+	}
+	sq.statement.GenerateWhereClause(filter...)
+	if err := sq.statement.CheckWhereClauseNotEmpty(); err != nil {
+		return 0, err
+	}
+
+	return sq.execWrite(ctx, sq.statement.DeleteQuery(one))
+}
+
+// execWrite runs query and returns the number of rows it affected.
+func (sq SQLite) execWrite(ctx context.Context, query string) (int64, error) {
+	result, err := sq.statement.ExecuteWriteQuery(ctx, sq.conn, sq.tx, query, sq.observer, sq.cache)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (sq SQLite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {

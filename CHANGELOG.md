@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### ⚠️ Breaking Changes
+- **`UpdateOne`, `DeleteOne` and `Restore` now affect one row.** They previously
+  emitted an uncapped `WHERE`, so `db.Where("status=?", "active").UpdateOne(...)`
+  updated *every* matching row. Call `UpdateMany`/`DeleteMany` where that was the
+  intent. Statements narrowed by `ID()` are unchanged.
+- **`sql.Engine` gained `UpdateMany` and `DeleteMany`.** Implementations outside
+  this repository must add both.
+
+### 🚀 New Features
+- `UpdateMany(ctx, doc) (int64, error)` and `DeleteMany(ctx, filter...) (int64, error)`
+  update or delete every matching row and return the count. Matching nothing
+  returns `(0, nil)` rather than `ErrNotFound`.
+- `core.DeclaredPKColumn` reports the column a `pk` tag names, separating it from
+  `GetPKColumn`'s `"id"` fallback for callers that put the column into SQL.
+
+### 🐛 Bug Fixes
+- **SQLite used the Postgres dialect.** `NewSQLite` never initialised its
+  statement, so every SQLite query fell through to the Postgres default and
+  emitted `$1` placeholders — which SQLite happens to accept, hiding the bug.
+
 ## v1.4.0 (2026-04-17)
 
 This release transforms Styx into a robust, production-ready database engine with a fluent query builder, advanced data integrity features, and significant performance optimizations.

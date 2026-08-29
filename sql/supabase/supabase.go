@@ -256,6 +256,10 @@ func (s Supabase) UpdateOne(ctx context.Context, document any) error {
 	return s.client.DB.From(s.table).Update(document).Eq("id", toString(s.id)).Execute(&document)
 }
 
+func (s Supabase) UpdateMany(ctx context.Context, document any) (int64, error) {
+	panic("implement me")
+}
+
 func (s Supabase) DeleteOne(ctx context.Context, filter ...any) error {
 	if err := dberr.CheckIdOrFilterNonEmpty(s.id, filter); err != nil {
 		return err
@@ -275,6 +279,10 @@ func (s Supabase) DeleteOne(ctx context.Context, filter ...any) error {
 
 	rs := map[string]interface{}{}
 	return cl.Execute(&rs)
+}
+
+func (s Supabase) DeleteMany(ctx context.Context, filter ...any) (int64, error) {
+	panic("implement me")
 }
 
 func (s Supabase) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {

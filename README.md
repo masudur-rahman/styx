@@ -33,6 +33,7 @@ go test ./examples/
 | Feature | Example |
 |---------|---------|
 | CRUD + filters (ID / Where / struct filter / Columns) | [`example_crud_test.go`](examples/example_crud_test.go) |
+| One row vs many (`UpdateOne`/`UpdateMany`, `DeleteOne`/`DeleteMany`) | [`example_crud_test.go`](examples/example_crud_test.go) |
 | Ordering, pagination, LIKE / IN, aggregates + GROUP BY | [`example_query_test.go`](examples/example_query_test.go) |
 | Row count (`Count`, soft-delete aware) | [`example_count_test.go`](examples/example_count_test.go) |
 | Every `db` tag on one struct, plus relations and tag errors | [`example_tags_test.go`](examples/example_tags_test.go) |
@@ -93,6 +94,7 @@ func main() {
 	db.Table("user").Where("email=?", "masud@example.com").FindOne(ctx, &user)
 
 	db.Table("user").ID(user.ID).UpdateOne(ctx, User{Email: "test@example.com"})
+	db.Table("user").Where("email=?", "test@example.com").UpdateMany(ctx, User{FullName: "Test User"})
 
 	db.Table("user").ID(1).DeleteOne(ctx)
 }
@@ -447,7 +449,9 @@ type User struct {
 db.DeleteOne(ctx, User{ID: 1})    // Sets deleted_at = CURRENT_TIMESTAMP
 db.FindMany(ctx, &users)          // Filters out rows where deleted_at IS NOT NULL
 db.WithDeleted().FindMany(ctx, &users) // Includes deleted rows
-db.Restore(ctx, User{ID: 1})      // Clears deleted_at
+db.Restore(ctx, User{ID: 1})      // Clears deleted_at on one row
+
+n, _ := db.Where("age < ?", 18).DeleteMany(ctx, User{}) // Marks every match deleted
 ```
 
 #### Struct Validation
@@ -517,8 +521,39 @@ All operations take a `context.Context` as the first argument.
 | `FindMany(ctx, docs any, filter ...any) error`            | Find multiple records into a slice   |
 | `InsertOne(ctx, doc any) (id any, err error)`             | Insert one record. Returns inserted ID. |
 | `InsertMany(ctx, docs []any) ([]any, error)`              | Bulk insert as a single multi-row `INSERT`; returns generated IDs |
-| `UpdateOne(ctx, doc any) error`                           | Update one record (requires WHERE)   |
-| `DeleteOne(ctx, filter ...any) error`                     | Delete one record (requires WHERE)   |
+| `UpdateOne(ctx, doc any) error`                           | Update one record (requires WHERE). `ErrNotFound` if nothing matched |
+| `UpdateMany(ctx, doc any) (int64, error)`                 | Update every matching record; returns rows changed |
+| `DeleteOne(ctx, filter ...any) error`                     | Delete one record (requires WHERE). `ErrNotFound` if nothing matched |
+| `DeleteMany(ctx, filter ...any) (int64, error)`           | Delete every matching record; returns rows removed |
+
+#### One Row or Many
+
+The `*One` methods change exactly one row, even when the conditions match more.
+Say which you mean:
+
+```go
+// one row, whichever has the lowest primary key
+db.Table("user").Where("status = ?", "pending").UpdateOne(ctx, User{Status: "active"})
+
+// every matching row
+n, _ := db.Table("user").Where("status = ?", "pending").UpdateMany(ctx, User{Status: "active"})
+```
+
+Matching nothing is an error for `*One` (`dberr.ErrNotFound`) but not for `*Many`,
+which returns `(0, nil)` — a bulk update that changes nothing is a normal result.
+
+Neither Postgres nor SQLite supports `UPDATE ... LIMIT`, so the cap is applied by
+selecting the row in a subquery:
+
+```sql
+UPDATE "user" SET status = $1
+WHERE id IN (SELECT id FROM "user" WHERE status = $2 ORDER BY id LIMIT 1)
+```
+
+It orders by the primary key, so the same call picks the same row rather than
+whichever the planner reached first. A struct with no `pk` tag falls back to the
+database's own row identifier (`ctid` on Postgres, `rowid` on SQLite) and has no
+such guarantee. An `ID()` lookup already names one row and is left alone.
 
 #### Bulk Insert
 

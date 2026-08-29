@@ -199,3 +199,39 @@ func memberDB(t *testing.T) *sql.DB {
 
 	return db
 }
+
+// TestDeleteQuery_dispatch pins the four statements DeleteQuery chooses between:
+// soft or hard delete, over one row or all of them.
+func TestDeleteQuery_dispatch(t *testing.T) {
+	tests := []struct {
+		name string
+		soft bool
+		one  bool
+		want string
+	}{
+		{"hard delete, one row", false, true, `DELETE FROM "member" WHERE rowid IN`},
+		{"hard delete, every row", false, false, `DELETE FROM "member" WHERE city = ?`},
+		{"soft delete, one row", true, true, `SET deleted_at = CURRENT_TIMESTAMP WHERE rowid IN`},
+		{"soft delete, every row", true, false, `SET deleted_at = CURRENT_TIMESTAMP WHERE city = ?`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt := NewStatement(SQLite)
+			stmt.Table("member").Where("city = ?", "dhaka")
+			if tc.soft {
+				stmt.SoftDeleteCol("deleted_at")
+			}
+			assert.Contains(t, stmt.DeleteQuery(tc.one), tc.want)
+		})
+	}
+}
+
+// TestUpdateQuery_dispatch pins that UpdateQuery caps only when asked to.
+func TestUpdateQuery_dispatch(t *testing.T) {
+	for _, one := range []bool{true, false} {
+		stmt := NewStatement(SQLite)
+		stmt.Table("member").Where("city = ?", "dhaka")
+		assert.Equal(t, one, strings.Contains(stmt.UpdateQuery(member{Name: "bob"}, one), "LIMIT 1"))
+	}
+}
