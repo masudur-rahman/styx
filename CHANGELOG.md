@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v2.1.0 (2026-08-29)
+
+Breaking changes ship under a minor version because the module path stays
+`/v2`. `go get -u` will pick them up; read the list below before upgrading.
 
 ### ⚠️ Breaking Changes
 - **`UpdateOne`, `DeleteOne` and `Restore` now affect one row.** They previously
