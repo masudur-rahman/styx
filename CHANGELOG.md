@@ -21,6 +21,11 @@
 - **SQLite used the Postgres dialect.** `NewSQLite` never initialised its
   statement, so every SQLite query fell through to the Postgres default and
   emitted `$1` placeholders — which SQLite happens to accept, hiding the bug.
+- **Soft delete was skipped when no filter document was given.** The delete path
+  only learned the `archive` column from a filter, so `db.Table("user").ID(1).
+  DeleteOne(ctx)` removed the row outright from a soft-delete table. It now falls
+  back to the column `Sync` registered, as reads already did. `Restore` and
+  `Count` by ID are fixed the same way; `ForceDelete` still deletes for real.
 
 ## v1.4.0 (2026-04-17)
 

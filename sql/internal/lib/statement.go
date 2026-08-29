@@ -470,8 +470,21 @@ func (stmt *Statement) SetForceDelete() *Statement {
 }
 
 // IsSoftDelete returns true if soft delete is enabled and not force-deleting.
+// SoftDeleteColumn returns the column marking a row deleted: the one taken from
+// a document, else the one Sync registered against the table name.
+//
+// The fallback matters for statements never handed a document — DeleteOne by
+// ID(), Restore, Count — which would otherwise treat a soft-delete table as an
+// ordinary one and delete the row outright.
+func (stmt *Statement) SoftDeleteColumn() string {
+	if stmt.softDeleteCol != "" {
+		return stmt.softDeleteCol
+	}
+	return core.SoftDeleteColumnForTable(stmt.table)
+}
+
 func (stmt *Statement) IsSoftDelete() bool {
-	return stmt.softDeleteCol != "" && !stmt.forceDelete
+	return stmt.SoftDeleteColumn() != "" && !stmt.forceDelete
 }
 
 // GenerateSoftDeleteQuery generates an UPDATE that marks at most one row deleted.
@@ -493,7 +506,7 @@ func (stmt *Statement) GenerateRestoreQuery() string {
 
 func (stmt *Statement) softDeleteQuery(value string, limitOne bool) string {
 	return fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s",
-		quoteIdent(stmt.table), stmt.softDeleteCol, value, stmt.rowLimit(limitOne))
+		quoteIdent(stmt.table), stmt.SoftDeleteColumn(), value, stmt.rowLimit(limitOne))
 }
 
 // rowLimit returns the statement's WHERE condition, narrowed to a single row
@@ -585,8 +598,8 @@ func (stmt *Statement) GenerateReadQuery(doc any) string {
 		b.WriteString(join)
 	}
 
-	if stmt.softDeleteCol != "" && !stmt.withDeleted {
-		stmt.where = stmt.AddWhereClause(stmt.softDeleteCol + " IS NULL")
+	if softCol := stmt.SoftDeleteColumn(); softCol != "" && !stmt.withDeleted {
+		stmt.where = stmt.AddWhereClause(softCol + " IS NULL")
 	}
 	if stmt.where != "" {
 		b.WriteString(" WHERE ")
@@ -675,11 +688,7 @@ func (stmt *Statement) GenerateCountQuery() string {
 		b.WriteString(join)
 	}
 
-	softCol := stmt.softDeleteCol
-	if softCol == "" {
-		softCol = core.SoftDeleteColumnForTable(stmt.table)
-	}
-	if softCol != "" && !stmt.withDeleted {
+	if softCol := stmt.SoftDeleteColumn(); softCol != "" && !stmt.withDeleted {
 		stmt.where = stmt.AddWhereClause(softCol + " IS NULL")
 	}
 	if stmt.where != "" {

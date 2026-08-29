@@ -350,3 +350,51 @@ func TestDeleteMany_noMatchReturnsZero(t *testing.T) {
 	assert.NoError(t, err, "matching nothing is not an error for a bulk delete")
 	assert.Equal(t, int64(0), removed)
 }
+
+// TestDeleteOne_softDeletesWithoutAFilterDocument covers a path that used to
+// destroy data: with no filter document the delete never learned the archive
+// column, so an ID() delete removed the row outright from a soft-delete table.
+func TestDeleteOne_softDeletesWithoutAFilterDocument(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+
+	live, err := db.Table("user").Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), live, "the row is hidden from ordinary reads")
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), all, "but it is still there, marked deleted")
+}
+
+// TestRestore_withoutAFilterDocument is the inverse: Restore by ID must find the
+// archive column the same way.
+func TestRestore_withoutAFilterDocument(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).DeleteOne(ctx))
+	assert.NoError(t, db.Table("user").ID(1).Restore(ctx))
+
+	live, err := db.Table("user").Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), live)
+}
+
+// TestForceDelete_stillRemovesTheRow guards the escape hatch: the registry
+// fallback must not turn a forced delete back into a soft one.
+func TestForceDelete_stillRemovesTheRow(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	seedAges(t, db, 30)
+
+	assert.NoError(t, db.Table("user").ID(1).ForceDelete(ctx))
+
+	all, err := db.Table("user").WithDeleted().Count(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), all, "force delete removes the row for real")
+}
